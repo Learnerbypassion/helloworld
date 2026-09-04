@@ -1,6 +1,6 @@
 /**
  * PurvArogya / MediKiosk API client
- * Interacts with the Express/better-sqlite3 backend.
+ * Interacts with the Express/MongoDB backend.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -78,11 +78,13 @@ export const api = {
   getDoctors: () => apiFetch('/auth/doctors'),
   addDoctor: (data) => apiFetch('/auth/doctors', { method: 'POST', body: JSON.stringify(data) }),
   deleteDoctor: (id) => apiFetch(`/auth/doctors/${id}`, { method: 'DELETE' }),
+  updateDoctorPassword: (id, password) => apiFetch(`/auth/doctors/${id}/password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
 
   // Receptionists
   getReceptionists: () => apiFetch('/auth/receptionists'),
   addReceptionist: (data) => apiFetch('/auth/receptionists', { method: 'POST', body: JSON.stringify(data) }),
   deleteReceptionist: (id) => apiFetch(`/auth/receptionists/${id}`, { method: 'DELETE' }),
+  updateReceptionistPassword: (id, password) => apiFetch(`/auth/receptionists/${id}/password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
 
   // Patients
   getPatients: () => apiFetch('/patients'),

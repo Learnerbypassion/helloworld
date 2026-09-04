@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Building2, Stethoscope, Users, ArrowLeft, ShieldCheck, Lock, FileText, UserCircle, Mail } from 'lucide-react';
+import { Building2, Stethoscope, Users, ArrowLeft, ShieldCheck, Lock, FileText, UserCircle, Mail, Key } from 'lucide-react';
 import { api } from '../services/api';
 import { useGlobal } from '../context/GlobalContext';
 
@@ -68,7 +68,7 @@ export default function HospitalLogin() {
         navigate('/doctor-dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Login failed. Please check credentials.');
+      setError(err.message || 'Login failed. Please check credentials or contact Hospital Admin.');
     } finally {
       setLoading(false);
     }
@@ -97,7 +97,7 @@ export default function HospitalLogin() {
             <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-16 h-16 drop-shadow-md" />
           </div>
           <h2 className="text-2xl font-semibold">PurvArogya Portal</h2>
-          <p className="text-brand-100 mt-2 text-sm">Secure access for authorized personnel only</p>
+          <p className="text-brand-100 mt-2 text-sm">Secure access for authorized healthcare personnel</p>
         </div>
 
         {/* Tabs - Only show if not registering */}
@@ -284,25 +284,34 @@ export default function HospitalLogin() {
 
                 {(activeTab === 'receptionist' || activeTab === 'doctor') && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Staff ID / Email</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {activeTab === 'doctor' ? 'Doctor Email or Mobile Number' : 'Staff Email or Mobile Number'}
+                    </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         {activeTab === 'doctor' ? <Stethoscope className="h-5 w-5 text-gray-400" /> : <UserCircle className="h-5 w-5 text-gray-400" />}
                       </div>
                       <input 
-                        type="email" 
+                        type="text" 
                         required 
                         value={staffForm.email}
                         onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
                         className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm" 
-                        placeholder={activeTab === 'doctor' ? "dr.smith@hospital.com" : "staff@hospital.com"} 
+                        placeholder={activeTab === 'doctor' ? "e.g. dr.sharma@hospital.com or 9876543210" : "e.g. staff@hospital.com or 9811223344"} 
                       />
                     </div>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Password</label>
+                    {activeTab !== 'admin' && (
+                      <span className="text-xs text-brand-600 font-mono">
+                        {activeTab === 'doctor' ? 'Initial: Doctor@123' : 'Initial: Reception@123'}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Lock className="h-5 w-5 text-gray-400" />
@@ -319,15 +328,18 @@ export default function HospitalLogin() {
                       placeholder="••••••••" 
                     />
                   </div>
+                  {activeTab !== 'admin' && (
+                    <p className="text-xs text-gray-500 mt-1.5 flex items-center">
+                      <Key className="w-3 h-3 mr-1 text-gray-400" /> 
+                      Set by Hospital Admin. Default: <b>{activeTab === 'doctor' ? 'Doctor@123' : 'Reception@123'}</b>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <input id="remember-me" type="checkbox" className="h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded" />
+                    <input id="remember-me" type="checkbox" defaultChecked className="h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded" />
                     <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">Remember me</label>
-                  </div>
-                  <div className="text-sm">
-                    <a href="#" className="font-medium text-brand-600 hover:text-brand-500">Forgot password?</a>
                   </div>
                 </div>
 
@@ -336,7 +348,7 @@ export default function HospitalLogin() {
                   disabled={loading}
                   className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 transition-colors mt-2 disabled:opacity-50"
                 >
-                  {loading ? 'Signing in...' : 'Sign in to Dashboard'}
+                  {loading ? 'Signing in...' : `Sign in as ${tabs.find(t=>t.id===activeTab)?.label || 'User'}`}
                 </button>
                 
                 {activeTab === 'admin' && (
