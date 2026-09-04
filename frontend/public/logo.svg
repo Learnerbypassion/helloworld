@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield Base -->
+  <path d="M128 24 L48 64 V112 C48 172 82 226 128 248 C174 226 208 172 208 112 V64 Z" fill="url(#primaryGrad)"/>
+  <!-- Leaf Overlay -->
+  <path d="M128 50 C128 50 180 80 180 140 C180 170 150 200 128 210 C106 200 76 170 76 140 C76 80 128 50 128 50 Z" fill="url(#accentGrad)"/>
+  <!-- Medical Cross -->
+  <path d="M112 100 H144 V116 H160 V148 H144 V164 H112 V148 H96 V116 H112 Z" fill="#ffffff"/>
+</svg>

@@ -1,0 +1,32 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+medikiosk.db*
+
+# OCR traineddata
+*.traineddata
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
