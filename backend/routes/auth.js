@@ -119,9 +119,35 @@ router.post("/doctors", requireAuth, requireRole("hospital_admin"), async (req, 
   }
 });
 
-router.get("/doctors", requireAuth, async (req, res) => {
+router.get("/doctors", async (req, res) => {
   try {
-    const doctors = await Doctor.find({ hospital_id: req.user.hospital_id, active: true }).sort({ name: 1 });
+    let hospId = req.query.hospital_id;
+    let isHospitalAdmin = false;
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (token) {
+      try {
+        const { JWT_SECRET } = require("../auth");
+        const jwt = require("jsonwebtoken");
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.role === "hospital_admin" && decoded.hospital_id && decoded.hospital_id !== "default") {
+          hospId = decoded.hospital_id;
+          isHospitalAdmin = true;
+        }
+      } catch (e) {}
+    }
+
+    let query = { active: true };
+    // Only restrict by hospital_id when a hospital admin is in their own admin dashboard
+    if (isHospitalAdmin && hospId) {
+      query.hospital_id = hospId;
+    }
+
+    let doctors = await Doctor.find(query).sort({ name: 1 });
+    // If hospital admin query found nothing, or if for kiosk/patient, return all active doctors
+    if (doctors.length === 0) {
+      doctors = await Doctor.find({ active: true }).sort({ name: 1 });
+    }
     res.json(doctors);
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to fetch doctors" });
@@ -347,7 +373,7 @@ router.post("/patient/verify-otp", async (req, res) => {
 
     let patient = await Patient.findOne({ phone: new RegExp(cleanPhone + "$") });
     if (!patient) {
-      const firstHospital = await Hospital.findOne();
+      const firstHospital = await Hospital.findOne().sort({ _id: -1 });
       const hospId = firstHospital ? firstHospital.id : "default";
       patient = await Patient.create({
         hospital_id: hospId,

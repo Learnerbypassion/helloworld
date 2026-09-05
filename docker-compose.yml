@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ocr:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+      # USE_GPU: "1"   # Uncomment + rebuild for CUDA GPU
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      ocr:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      MONGO_URI: mongodb://mongo:27017/medikiosk
+      OCR_SERVICE_URL: http://ocr:8001
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VERIFY_SID: ${TWILIO_VERIFY_SID:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploads_data:/app/uploads
+
+volumes:
+  mongo_data:
+  uploads_data:

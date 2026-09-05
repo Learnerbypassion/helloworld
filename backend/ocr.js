@@ -1,30 +1,69 @@
 /**
- * MediKiosk — Document Digitization Pipeline (Module B), Node.js port.
+ * MediKiosk -- Document Digitization Pipeline (ocr.js)
  *
- * Real OCR via tesseract.js (pure-JS build of the Tesseract engine — no
- * native binary install needed, unlike the old pytesseract version). First
- * run downloads the English traineddata to a local cache; after that it
- * runs fully offline.
+ * Replaced: tesseract.js (in-process)
+ * New: HTTP call to the PaddleOCR FastAPI sidecar.
+ *
+ * Exported signatures IDENTICAL to old version (zero blast radius):
+ *   runOcr(imagePath)          -> string (raw OCR text)
+ *   processDocument(imagePath) -> { raw_text, medications, labs }
+ *
+ * Configuration (env vars):
+ *   OCR_SERVICE_URL  default "http://127.0.0.1:8001"
+ *                    In Docker Compose: "http://ocr:8001"
+ *   OCR_TIMEOUT_MS   default 30000
  */
-const { createWorker } = require("tesseract.js");
+const fs       = require("fs");
+const path     = require("path");
+const axios    = require("axios");
+const FormData = require("form-data");
 const { processExtractedText } = require("./extract");
 
-let workerPromise = null;
-function getWorker() {
-  if (!workerPromise) {
-    workerPromise = createWorker("eng");
-  }
-  return workerPromise;
-}
+const OCR_SERVICE_URL = process.env.OCR_SERVICE_URL || "http://127.0.0.1:8001";
+const OCR_TIMEOUT_MS  = parseInt(process.env.OCR_TIMEOUT_MS || "30000", 10);
 
 async function runOcr(imagePath) {
-  const worker = await getWorker();
-  const { data } = await worker.recognize(imagePath);
-  return data.text || "";
+  const form = new FormData();
+  form.append("file", fs.createReadStream(imagePath), {
+    filename: path.basename(imagePath),
+    contentType: "application/octet-stream",
+  });
+
+  let response;
+  try {
+    response = await axios.post(`${OCR_SERVICE_URL}/ocr`, form, {
+      headers: form.getHeaders(),
+      timeout: OCR_TIMEOUT_MS,
+      maxBodyLength: Infinity,
+    });
+  } catch (err) {
+    const connError = ["ECONNREFUSED","ECONNRESET","ETIMEDOUT","ENOTFOUND"].includes(err.code);
+    if (connError) {
+      throw new Error(
+        `OCR service is unavailable (${OCR_SERVICE_URL}). ` +
+        "Start it: cd ocr-service && python main.py"
+      );
+    }
+    const detail = err.response?.data?.detail || err.message;
+    throw new Error(`OCR service error: ${detail}`);
+  }
+
+  if (!response.data.success) throw new Error("OCR service returned success=false");
+  if (response.data.text) return response.data.text;
+  if (Array.isArray(response.data.results)) {
+    const lines = [];
+    for (const item of response.data.results) {
+      const recs = item?.res?.rec_texts || item?.rec_texts;
+      if (Array.isArray(recs)) lines.push(...recs);
+    }
+    if (lines.length > 0) return lines.join("\n");
+  }
+  return response.data.text || "";
 }
 
 async function processDocument(imagePath) {
   const text = await runOcr(imagePath);
+  console.log("This is coming from the OCR",processExtractedText(text));
   return processExtractedText(text);
 }
 

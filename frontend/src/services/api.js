@@ -109,7 +109,7 @@ export const api = {
     fd.append('file', file);
     return apiFetch(`/sessions/${id}/document`, { method: 'POST', body: fd });
   },
-  submitSession: (id) => apiFetch(`/sessions/${id}/submit`, { method: 'POST' }),
+  submitSession: (id, data = {}) => apiFetch(`/sessions/${id}/submit`, { method: 'POST', body: JSON.stringify(data) }),
   getSession: (id) => apiFetch(`/sessions/${id}`),
 
   // Doctor Module
@@ -117,4 +117,10 @@ export const api = {
   getDoctorStats: () => apiFetch('/doctor/stats'),
   getPatientMedications: (patientId) => apiFetch(`/doctor/patients/${patientId}/medications`),
   reviewSession: (sessionId, data) => apiFetch(`/doctor/sessions/${sessionId}/review`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // AI Summary (on-demand, doctor/admin only)
+  summarizeSession: (id) => apiFetch(`/sessions/${id}/summarize`, { method: 'POST' }),
+
+  // AYUSH guided questions
+  getAyushQuestions: () => apiFetch('/ayush/questions'),
 };

@@ -44,15 +44,46 @@ router.get("/stats", requireAuth, requireRole("doctor", "hospital_admin"), async
 // ---------- Doctor Dashboard: queue of submitted patients ----------
 router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async (req, res) => {
   try {
-    const patientList = await Patient.find({ hospital_id: req.user.hospital_id });
+    const isDoc = req.user.role === "doctor";
+    const docId = req.user.id;
+    const hospId = req.user.hospital_id;
+
+    let query = { status: "submitted" };
+    if (isDoc) {
+      // Find all patients in this hospital, or assigned to this doctor
+      const pList = await Patient.find({
+        $or: [{ hospital_id: hospId }, { doctor_id: docId }]
+      }).select("_id");
+      const patientIds = pList.map(p => p._id.toString());
+
+      // Show sessions explicitly assigned to this doctor, or unassigned, or belonging to hospital
+      query = {
+        status: "submitted",
+        $or: [
+          { doctor_id: docId },
+          { doctor_id: null },
+          { patient_id: { $in: patientIds } }
+        ]
+      };
+    } else {
+      // Hospital Admin: show all submitted sessions for this hospital or unassigned
+      const pList = await Patient.find({ hospital_id: hospId }).select("_id");
+      const patientIds = pList.map(p => p._id.toString());
+      query = {
+        status: "submitted",
+        $or: [
+          { patient_id: { $in: patientIds } },
+          { doctor_id: null }
+        ]
+      };
+    }
+
+    const sessions = await IntakeSession.find(query).sort({ red_flag: -1, submitted_at: 1 });
+
+    const sessionPatientIds = [...new Set(sessions.map(s => s.patient_id?.toString()).filter(Boolean))];
+    const patientList = await Patient.find({ _id: { $in: sessionPatientIds } });
     const patientMap = new Map();
     patientList.forEach(p => patientMap.set(p.id, p));
-    const patientIds = patientList.map(p => p.id);
-
-    const sessions = await IntakeSession.find({
-      patient_id: { $in: patientIds },
-      status: "submitted"
-    }).sort({ red_flag: -1, submitted_at: 1 });
 
     const results = sessions.map(s => {
       const p = patientMap.get(s.patient_id?.toString()) || {};
@@ -61,10 +92,13 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
         id: s.id,
         patient_id: s.patient_id,
         patientId: s.patient_id,
+        doctor_id: s.doctor_id,
+        doctorId: s.doctor_id,
         token: s.token,
         name: p.name || "Patient",
         patient_name: p.name || "Patient",
         chief_complaint: s.chief_complaint,
+        summary: s.summary || null,
         red_flag: !!s.red_flag,
         red_flag_reason: s.red_flag_reason,
         ayush_mode: !!s.ayush_mode,
@@ -77,6 +111,7 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
         intake: {
           mode: s.ayush_mode ? "AYUSH" : "Allopathic",
           chiefComplaint: s.chief_complaint ? [s.chief_complaint] : [],
+          summary: s.summary || null,
           hpi: s.transcript || "",
           ayushData: s.ayush_fields || {},
           redFlags: s.red_flag ? [s.red_flag_reason || "Emergency alert"] : [],
