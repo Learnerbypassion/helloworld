@@ -77,8 +77,13 @@ ${hpiLines}`;
 **Chief Complaint:** [one sentence]
 **Key History:** [2-4 bullets]
 **Red Flags / Triage:** [status and reason, or "None"]
-**Uploaded Document Analysis / Lab Findings:** [Interpret all lab tests, blood parameters like CBC/Haematology, numerical values, and reference ranges found in OCR text, or "None uploaded"]
-**Extracted Medications:** [Medications with dosage and frequency, or "None"]
+**Uploaded Document Analysis / Lab Findings:**
+Present all detected lab parameters in a structured Markdown Key-Value table format:
+| Parameter | Value | Reference Range | Status |
+|---|---|---|---|
+| [Test Name] | [Observed Value + Unit] | [Normal Range] | [Normal / Low / High] |
+Followed by a 1-2 sentence clinical summary of the findings. If no lab document was uploaded, write: "No document uploaded".
+**Extracted Medications:** [List of medications with dose and frequency, or "None"]
 **Clinical Assessment & Suggested Priority:** [Routine / Urgent / Emergency with brief clinical rationale]`;
 
   return prompt;

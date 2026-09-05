@@ -1,8 +1,302 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw } from 'lucide-react';
+import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
+
+
+function FormattedAiSummary({ text }) {
+  if (!text) return null;
+
+  const renderInline = (str) => {
+    if (!str) return '';
+    const parts = str.split(/(\?\?[^*]+\?\?|\*\*[^*]+\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={idx} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
+  const getSection = (pattern) => {
+    const match = text.match(pattern);
+    return match ? match[1].trim() : null;
+  };
+
+  const chiefComplaint = getSection(/\*\*Chief Complaint:?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+  const keyHistory = getSection(/\*\*Key History:?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+  const redFlags = getSection(/\*\*(?:Red Flags?\s*(?:\/|\&)?\s*Triage|Triage):?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+  const labFindings = getSection(/\*\*(?:Uploaded Document Analysis|Lab Findings|Uploaded Report Findings)[^:]*:?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+  const medications = getSection(/\*\*(?:Extracted Medications?|Medications? Detected):?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+  const assessment = getSection(/\*\*(?:Clinical Assessment|Suggested Priority)[^:]*:?\*\*\s*([\s\S]*?)(?=\n\s*\*\*|$)/i);
+
+  const isStructured = chiefComplaint || keyHistory || labFindings || assessment;
+
+  if (!isStructured) {
+    return (
+      <div className="space-y-2 text-sm text-gray-700 leading-relaxed font-sans">
+        {text.split('\n').map((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return <div key={idx} className="h-1.5" />;
+          if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+            return (
+              <div key={idx} className="flex items-start ml-2 space-x-2">
+                <span className="text-brand-500 font-bold">•</span>
+                <span>{renderInline(trimmed.slice(2))}</span>
+              </div>
+            );
+          }
+          return <p key={idx}>{renderInline(trimmed)}</p>;
+        })}
+      </div>
+    );
+  }
+
+  let priority = 'Routine';
+  let priorityColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  if (/urgent/i.test(assessment || '')) {
+    priority = 'Urgent';
+    priorityColor = 'bg-amber-100 text-amber-800 border-amber-300';
+  } else if (/emergency|critical|high priority/i.test(assessment || '')) {
+    priority = 'Emergency';
+    priorityColor = 'bg-red-100 text-red-800 border-red-300 animate-pulse';
+  }
+
+  const isSafeTriage = !redFlags || /none|no immediate|normal/i.test(redFlags);
+
+  return (
+    <div className="space-y-3.5 text-sm font-sans pt-1">
+      {/* Chief Complaint */}
+      {chiefComplaint && (
+        <div className="bg-blue-50/80 border border-blue-200/80 rounded-xl p-3.5 flex items-start space-x-3 shadow-2xs">
+          <div className="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0 mt-0.5">
+            <Stethoscope className="w-4 h-4" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-[11px] font-bold tracking-wider uppercase text-blue-800">Chief Complaint</h4>
+            <p className="text-gray-900 font-medium text-sm mt-0.5 leading-snug">{renderInline(chiefComplaint)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Key History Bullets */}
+      {keyHistory && (
+        <div className="bg-white border border-gray-200/80 rounded-xl p-3.5 shadow-2xs">
+          <h4 className="text-[11px] font-bold tracking-wider uppercase text-gray-500 mb-2 flex items-center">
+            <Clock className="w-3.5 h-3.5 mr-1.5 text-purple-600" /> Key Clinical History
+          </h4>
+          <ul className="space-y-1.5 pl-1">
+            {keyHistory.split('\n').filter(l => l.trim()).map((line, idx) => {
+              const clean = line.replace(/^[\*\-\•]\s*/, '').trim();
+              return (
+                <li key={idx} className="flex items-start text-gray-800 text-xs sm:text-sm leading-relaxed">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-2 mr-2.5 shrink-0" />
+                  <span>{renderInline(clean)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Triage / Red Flags */}
+      {redFlags && (
+        <div className={`rounded-xl p-3 border flex items-center space-x-3 ${isSafeTriage ? 'bg-green-50/80 border-green-200 text-green-900' : 'bg-red-50 border-red-300 text-red-900'}`}>
+          <div className={`p-1.5 rounded-lg shrink-0 ${isSafeTriage ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            <ShieldAlert className="w-4 h-4" />
+          </div>
+          <div className="flex-1">
+            <span className="text-[11px] font-bold tracking-wider uppercase opacity-75 block">Triage & Red Flag Assessment</span>
+            <span className="font-semibold text-xs sm:text-sm">{renderInline(redFlags)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded Document / Lab Findings (Key-Value Table Format) */}
+      {labFindings && (() => {
+        // Parse markdown table if present
+        const tableLines = labFindings.split('\n').filter(l => l.trim().startsWith('|'));
+        let parsedTable = [];
+        let nonTableText = [];
+
+        if (tableLines.length >= 2) {
+          // Has markdown table
+          const rawRows = tableLines.filter(l => !/^[\|\-\s:]+$/.test(l.trim()));
+          if (rawRows.length > 0) {
+            parsedTable = rawRows.slice(1).map(row => {
+              const cells = row.split('|').map(c => c.trim()).filter(Boolean);
+              return {
+                param: cells[0] || '',
+                value: cells[1] || '',
+                ref: cells[2] || '-',
+                status: cells[3] || 'Normal'
+              };
+            }).filter(r => r.param);
+          }
+          nonTableText = labFindings.split('\n').filter(l => !l.trim().startsWith('|') && l.trim().length > 0);
+        } else {
+          // Regex extract key-value pairs from prose/paragraph
+          const extractedRows = [];
+          const knownPatterns = [
+            { name: 'Serum Urea', regex: /urea[^\d]*(\d+(?:\.\d+)?)\s*(mg\/dl)?(?:[^\d]*reference[^\d]*(\d+(?:\s*-\s*\d+)?))?/i, defaultRef: '19 - 45 mg/dL' },
+            { name: 'Serum Creatinine', regex: /creatinine[^\d]*(\d+(?:\.\d+)?)\s*(mg\/dl)?(?:[^\d]*reference[^\d]*(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)))?/i, defaultRef: '0.72 - 1.18 mg/dL' },
+            { name: 'eGFR', regex: /egfr[^\d]*(\d+(?:\.\d+)?)\s*(ml\/min[^,\n\.]*)?/i, defaultRef: '> 90 mL/min' },
+            { name: 'BUN / Creatinine Ratio', regex: /bun\s*\/\s*creatinine\s*ratio[^\d]*(\d+(?:\.\d+)?)/i, defaultRef: '10 - 20' },
+            { name: 'BUN', regex: /\bbun\b[^\d]*(\d+(?:\.\d+)?)\s*(mg\/dl)?/i, defaultRef: '7.9 - 20 mg/dL' },
+            { name: 'Serum Calcium', regex: /calcium[^\d]*(\d+(?:\.\d+)?)\s*(mg\/dl)?/i, defaultRef: '8.8 - 10.6 mg/dL' },
+            { name: 'Serum Potassium', regex: /potassium[^\d]*(\d+(?:\.\d+)?)\s*(mmol\/l)?/i, defaultRef: '3.5 - 5.1 mmol/L' },
+            { name: 'Serum Sodium', regex: /sodium[^\d]*(\d+(?:\.\d+)?)\s*(mmol\/l)?/i, defaultRef: '136 - 146 mmol/L' },
+            { name: 'Serum Uric Acid', regex: /uric\s*acid[^\d]*(\d+(?:\.\d+)?)\s*(mg\/dl)?/i, defaultRef: '3.5 - 7.2 mg/dL' },
+            { name: 'Platelet Count', regex: /platelet[^\d]*([\d,]+(?:\.\d+)?)/i, defaultRef: '1,50,000 - 4,50,000' },
+            { name: 'Hemoglobin', regex: /hemoglobin|\bhb\b[^\d]*(\d+(?:\.\d+)?)/i, defaultRef: '12 - 16 g/dL' },
+          ];
+
+          for (const kp of knownPatterns) {
+            const m = labFindings.match(kp.regex);
+            if (m) {
+              const valNum = m[1];
+              const unit = m[2] || '';
+              const ref = m[3] || kp.defaultRef;
+              let status = 'Normal';
+              if (/low|slightly elevated|decreased|elevated|abnormal|reduced/i.test(labFindings)) {
+                if (kp.name === 'Serum Urea' && parseFloat(valNum) < 19) status = 'Low';
+                else if (kp.name === 'Serum Creatinine' && parseFloat(valNum) < 0.72) status = 'Low';
+                else if (kp.name === 'Serum Urea' && parseFloat(valNum) > 45) status = 'High';
+              }
+              extractedRows.push({
+                param: kp.name,
+                value: `${valNum} ${unit}`.trim(),
+                ref: ref,
+                status: status
+              });
+            }
+          }
+
+          if (extractedRows.length > 0) {
+            parsedTable = extractedRows;
+            nonTableText = [labFindings];
+          } else {
+            nonTableText = [labFindings];
+          }
+        }
+
+        return (
+          <div className="bg-gradient-to-br from-emerald-50/90 to-teal-50/40 border border-emerald-200 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-emerald-200/80">
+              <h4 className="text-xs font-bold tracking-wider uppercase text-emerald-900 flex items-center">
+                <Microscope className="w-4 h-4 mr-1.5 text-emerald-700" /> Uploaded Document & Lab Findings
+              </h4>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                Key-Value Lab Analysis
+              </span>
+            </div>
+
+            {/* Render Key-Value Table if parameters found */}
+            {parsedTable.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-emerald-200/70 bg-white mb-3 shadow-2xs">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-emerald-50/80 text-emerald-900 border-b border-emerald-200 text-[11px] uppercase font-bold">
+                    <tr>
+                      <th className="py-2.5 px-3">Test Parameter</th>
+                      <th className="py-2.5 px-3">Observed Value</th>
+                      <th className="py-2.5 px-3">Reference Range</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {parsedTable.map((row, idx) => {
+                      const isLow = /low/i.test(row.status);
+                      const isHigh = /high|elevated/i.test(row.status);
+                      const isAbnormal = isLow || isHigh;
+                      return (
+                        <tr key={idx} className="hover:bg-emerald-50/30 transition-colors">
+                          <td className="py-2 px-3 font-semibold text-gray-900 flex items-center">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 shrink-0" />
+                            {row.param}
+                          </td>
+                          <td className="py-2 px-3 font-bold text-gray-800">
+                            {row.value}
+                          </td>
+                          <td className="py-2 px-3 text-gray-500 font-mono text-[11px]">
+                            {row.ref}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            {isAbnormal ? (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${isLow ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                {isLow ? 'Low' : 'High'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                                Normal
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Supporting Clinical Notes from AI */}
+            {nonTableText.length > 0 && (
+              <div className="bg-white/80 p-3 rounded-lg border border-emerald-100 text-xs text-gray-700 leading-relaxed">
+                <span className="font-bold text-emerald-900 block mb-1">Clinical Interpretation:</span>
+                {nonTableText.map((p, idx) => (
+                  <p key={idx} className="my-1">{renderInline(p)}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Extracted Medications */}
+      {medications && (
+        <div className="bg-purple-50/50 border border-purple-200/80 rounded-xl p-3 flex items-start space-x-3">
+          <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg shrink-0 mt-0.5">
+            <Pill className="w-4 h-4" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-[11px] font-bold tracking-wider uppercase text-purple-900">Extracted Medications</h4>
+            <div className="mt-1">
+              {/none/i.test(medications) ? (
+                <span className="text-xs text-gray-500 italic">No historical medications detected</span>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {medications.split(/[,;\n]+/).filter(m => m.trim()).map((m, idx) => (
+                    <span key={idx} className="bg-white border border-purple-200 text-purple-900 text-xs px-2.5 py-1 rounded-full font-medium shadow-2xs">
+                      {m.replace(/^[\*\-\•]\s*/, '').trim()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clinical Assessment & Priority */}
+      {assessment && (
+        <div className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-2xs flex flex-col space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[11px] font-bold tracking-wider uppercase text-gray-500 flex items-center">
+              <Activity className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> Clinical Assessment & Priority
+            </h4>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${priorityColor}`}>
+              {priority} Priority
+            </span>
+          </div>
+          <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">
+            {renderInline(assessment.replace(/^(?:Routine|Urgent|Emergency)[\.\s\:\-]*/i, ''))}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DoctorDashboard() {
   const navigate = useNavigate();
@@ -18,6 +312,7 @@ export default function DoctorDashboard() {
   const [isCompleting, setIsCompleting] = useState(false);
   const [aiSummary, setAiSummary] = useState(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showRawSummary, setShowRawSummary] = useState(false);
 
   const startConsultation = async (qItem) => {
     setActiveConsultation(qItem);
@@ -196,22 +491,36 @@ export default function DoctorDashboard() {
                         <h3 className="font-bold text-gray-800 text-lg flex items-center">
                           <Sparkles className="w-5 h-5 mr-2 text-purple-500" />
                           AI Clinical Summary
-                          {aiSummary && <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Ollama Generated</span>}
+                          {aiSummary && <span className="ml-2 text-xs bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-semibold border border-green-200">Ollama Generated</span>}
                           {!aiSummary && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Not available</span>}
                         </h3>
-                        <button
-                          onClick={handleRegenerateSummary}
-                          disabled={isRegenerating}
-                          className="flex items-center text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-                          {isRegenerating ? 'Generating...' : 'Re-generate'}
-                        </button>
+                        <div className="flex items-center space-x-2">
+                          {aiSummary && (
+                            <button
+                              onClick={() => setShowRawSummary(!showRawSummary)}
+                              className="text-xs text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 border border-gray-300 px-2.5 py-1.5 rounded-lg transition font-medium"
+                            >
+                              {showRawSummary ? 'Cards View' : 'Raw Text'}
+                            </button>
+                          )}
+                          <button
+                            onClick={handleRegenerateSummary}
+                            disabled={isRegenerating}
+                            className="flex items-center text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-lg transition disabled:opacity-50 font-medium"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                            {isRegenerating ? 'Generating...' : 'Re-generate'}
+                          </button>
+                        </div>
                       </div>
                       {aiSummary ? (
-                        <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{aiSummary}</pre>
+                        showRawSummary ? (
+                          <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-96 overflow-y-auto">{aiSummary}</pre>
+                        ) : (
+                          <FormattedAiSummary text={aiSummary} />
+                        )
                       ) : (
-                        <p className="text-sm text-gray-400 italic">No summary yet. Click "Re-generate" to run the local LLM (requires Ollama with {import.meta.env.VITE_OLLAMA_MODEL || 'llama3.1:8b'}).</p>
+                        <p className="text-sm text-gray-400 italic py-2">No summary yet. Click "Re-generate" to run the local LLM (requires Ollama with {import.meta.env.VITE_OLLAMA_MODEL || 'llama3.1:8b'}).</p>
                       )}
                     </div>
 

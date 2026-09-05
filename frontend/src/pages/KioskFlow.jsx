@@ -46,6 +46,7 @@ export default function KioskFlow() {
   const [abhaId, setAbhaId] = useState('');
   const [patient, setPatient] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [isSelfServed, setIsSelfServed] = useState(true);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -109,6 +110,14 @@ export default function KioskFlow() {
       const res = await api.kioskCheckin({ abha_id: abhaId, phone: abhaId });
       if (res?.token) handleAuthSuccess(res.token, { ...res.patient, role: 'patient' });
       setPatient(res.patient);
+      setIsSelfServed(!!res?.is_self_served);
+
+      // Re-fetch doctors based on patient type (self-served vs receptionist-added)
+      try {
+        const freshDocs = await api.getDoctors();
+        if (Array.isArray(freshDocs)) setLocalDoctors(freshDocs);
+      } catch (_) {}
+
       setStep(1);
     } catch (err) {
       const p = patients[0] || { name: 'Verified Patient', abhaId: abhaId, id: 1 };
@@ -485,7 +494,10 @@ export default function KioskFlow() {
             {step === 6 && (
               <motion.div key="step6" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="h-full flex flex-col justify-center max-w-2xl mx-auto">
                 <h2 className="text-3xl font-bold text-gray-900 mb-2 text-center">Choose a Physician</h2>
-                <p className="text-gray-500 mb-8 text-center">Select your preferred doctor or skip to be auto-assigned.</p>
+                <p className="text-gray-500 mb-2 text-center">Select your preferred doctor or skip to be auto-assigned.</p>
+                <p className="text-xs text-center font-semibold mb-6 ${isSelfServed ? 'text-purple-600' : 'text-brand-600'}">
+                  {isSelfServed ? 'Displaying Independent / Teleconsult Physicians' : 'Displaying Doctors Registered at your Hospital'}
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {filteredDoctors.map(doc => (
                     <div key={doc.id} onClick={() => setSelectedDoctor(doc.id)}

@@ -121,34 +121,60 @@ router.post("/doctors", requireAuth, requireRole("hospital_admin"), async (req, 
 
 router.get("/doctors", async (req, res) => {
   try {
-    let hospId = req.query.hospital_id;
-    let isHospitalAdmin = false;
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    let decoded = null;
     if (token) {
       try {
         const { JWT_SECRET } = require("../auth");
         const jwt = require("jsonwebtoken");
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role === "hospital_admin" && decoded.hospital_id && decoded.hospital_id !== "default") {
-          hospId = decoded.hospital_id;
-          isHospitalAdmin = true;
-        }
+        decoded = jwt.verify(token, JWT_SECRET);
       } catch (e) {}
     }
 
-    let query = { active: true };
-    // Only restrict by hospital_id when a hospital admin is in their own admin dashboard
-    if (isHospitalAdmin && hospId) {
-      query.hospital_id = hospId;
+    // Get all registered active hospital IDs
+    const hospitals = await Hospital.find().select("_id");
+    const validHospitalIds = new Set(hospitals.map(h => h._id.toString()));
+
+    const allActiveDoctors = await Doctor.find({ active: true }).sort({ name: 1 });
+
+    const isConnectedToHospital = (d) => {
+      if (!d.hospital_id) return false;
+      const hid = d.hospital_id.toString();
+      if (hid === "independent" || hid === "default" || hid === "none") return false;
+      return validHospitalIds.has(hid);
+    };
+
+    // Case 1: Self-served patient -> ONLY show doctors who are NOT connected to any hospital
+    const isSelfServed = decoded?.is_self_served === true || 
+                         (decoded?.role === "patient" && (!decoded?.hospital_id || decoded?.hospital_id === "independent" || !validHospitalIds.has(decoded.hospital_id.toString())));
+
+    if (isSelfServed) {
+      const independentDoctors = allActiveDoctors.filter(d => !isConnectedToHospital(d));
+      return res.json(independentDoctors);
     }
 
-    let doctors = await Doctor.find(query).sort({ name: 1 });
-    // If hospital admin query found nothing, or if for kiosk/patient, return all active doctors
-    if (doctors.length === 0) {
-      doctors = await Doctor.find({ active: true }).sort({ name: 1 });
+    // Case 2: Receptionist-registered patient -> ONLY show doctors registered in that hospital
+    if (decoded?.role === "patient" && decoded?.hospital_id && validHospitalIds.has(decoded.hospital_id.toString())) {
+      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === decoded.hospital_id.toString());
+      return res.json(hospitalDoctors);
     }
-    res.json(doctors);
+
+    // Case 3: Hospital Admin or Receptionist -> show only their hospital's doctors
+    if ((decoded?.role === "hospital_admin" || decoded?.role === "receptionist") && decoded?.hospital_id) {
+      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === decoded.hospital_id.toString());
+      return res.json(hospitalDoctors);
+    }
+
+    // Case 4: Explicit query parameter ?hospital_id=...
+    if (req.query.hospital_id) {
+      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === req.query.hospital_id.toString());
+      return res.json(hospitalDoctors);
+    }
+
+    // Default for unauthenticated kiosk walk-in preview: show independent doctors
+    const independentDoctors = allActiveDoctors.filter(d => !isConnectedToHospital(d));
+    res.json(independentDoctors.length > 0 ? independentDoctors : allActiveDoctors);
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to fetch doctors" });
   }
@@ -418,21 +444,41 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
       const cleanPhone = phone.replace(/[^0-9]/g, "").slice(-10);
       patient = await Patient.findOne({ phone: new RegExp(cleanPhone + "$") });
     }
-    if (!patient) {
-      const firstHospital = await Hospital.findOne();
-      const hospId = firstHospital ? firstHospital.id : "default";
+
+    let isSelfServed = false;
+    const registeredHospitals = await Hospital.find().select("_id");
+    const validHospIds = new Set(registeredHospitals.map(h => h._id.toString()));
+
+    if (patient) {
+      // Patient was previously registered (by a receptionist or admin)
+      if (patient.hospital_id && validHospIds.has(patient.hospital_id.toString())) {
+        isSelfServed = false;
+      } else {
+        isSelfServed = true;
+      }
+    } else {
+      // Patient is a walk-in self-served kiosk patient (not added by receptionist)
+      isSelfServed = true;
       const cleanPhone = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "9876543210";
       const abhaVal = abha_id || "12-3456-7890-1234";
       patient = await Patient.create({
-        hospital_id: hospId,
+        hospital_id: "independent",
         name: "Self-Service Patient",
         phone: cleanPhone,
         abha_id: abhaVal,
         language: "English"
       });
     }
-    const token = signToken({ role: "patient", id: patient.id, hospital_id: patient.hospital_id, name: patient.name });
-    res.json({ token, patient });
+
+    const token = signToken({
+      role: "patient",
+      id: patient.id,
+      hospital_id: isSelfServed ? "independent" : patient.hospital_id,
+      is_self_served: isSelfServed,
+      name: patient.name
+    });
+
+    res.json({ token, patient, is_self_served: isSelfServed });
   } catch (err) {
     res.status(500).json({ error: err.message || "Kiosk check-in failed" });
   }
