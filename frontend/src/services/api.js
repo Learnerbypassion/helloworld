@@ -116,6 +116,9 @@ export const api = {
   getDoctorQueue: () => apiFetch('/doctor/queue'),
   getDoctorStats: () => apiFetch('/doctor/stats'),
   getPatientMedications: (patientId) => apiFetch(`/doctor/patients/${patientId}/medications`),
+  getAbhaHistory: (patientId) => apiFetch(`/doctor/patients/${patientId}/abha-history`),
+  getAbhaRecordsDirect: (abhaId) =>
+    fetch(`http://localhost:8005/api/records/${encodeURIComponent(abhaId)}`).then(r => r.json()).catch(() => ({ records: [] })),
   reviewSession: (sessionId, data) => apiFetch(`/doctor/sessions/${sessionId}/review`, { method: 'POST', body: JSON.stringify(data) }),
 
   // AI Summary (on-demand, doctor/admin only)

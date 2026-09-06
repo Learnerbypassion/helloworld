@@ -309,7 +309,7 @@ export const GlobalProvider = ({ children }) => {
   // Doctor Actions
   const completeConsultation = async (queueId, patientId, notes, prescription) => {
     try {
-      await api.reviewSession(queueId, {
+      const reviewRes = await api.reviewSession(queueId, {
         summary: notes,
         diagnosis: notes,
         prescription: prescription,
@@ -338,6 +338,7 @@ export const GlobalProvider = ({ children }) => {
           return p;
         })
       );
+      return reviewRes;
     } catch (err) {
       console.error('Failed to complete consultation:', err);
       throw err;

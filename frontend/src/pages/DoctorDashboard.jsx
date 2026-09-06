@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText } from 'lucide-react';
+import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
 
@@ -313,6 +313,30 @@ export default function DoctorDashboard() {
   const [aiSummary, setAiSummary] = useState(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [showRawSummary, setShowRawSummary] = useState(false);
+  const [abhaHistory, setAbhaHistory] = useState([]);
+  const [loadingAbha, setLoadingAbha] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
+
+  const fetchAbhaHistory = async (qItem) => {
+    if (!qItem) return;
+    setLoadingAbha(true);
+    try {
+      const pid = qItem.patientId || qItem.patient_id;
+      let res = null;
+      if (pid) {
+        res = await api.getAbhaHistory(pid);
+      }
+      if ((!res || !res.records || res.records.length === 0) && qItem.abha_id) {
+        res = await api.getAbhaRecordsDirect(qItem.abha_id);
+      }
+      setAbhaHistory(res?.records || []);
+    } catch (err) {
+      console.warn("Failed to load ABHA history:", err);
+      setAbhaHistory([]);
+    } finally {
+      setLoadingAbha(false);
+    }
+  };
 
   const startConsultation = async (qItem) => {
     setActiveConsultation(qItem);
@@ -320,6 +344,8 @@ export default function DoctorDashboard() {
     setPrescription('');
     setShowFhir(false);
     setAiSummary(qItem.summary || qItem.intake?.summary || null);
+    setSyncStatus(null);
+    fetchAbhaHistory(qItem);
 
     try {
       const s = await api.getSession(qItem.id);
@@ -363,12 +389,22 @@ export default function DoctorDashboard() {
   const handleComplete = async () => {
     if (!activeConsultation) return;
     setIsCompleting(true);
+    setSyncStatus(null);
     try {
-      await completeConsultation(activeConsultation.id, activeConsultation.patientId, symptoms, prescription);
-      setActiveConsultation(null);
-      setFhirData(null);
-      setSessionDocs([]);
-      setAiSummary(null);
+      const res = await completeConsultation(activeConsultation.id, activeConsultation.patientId, symptoms, prescription);
+      if (res && res.abha_synced) {
+        setSyncStatus({ synced: true, record_id: res.record_id });
+      } else if (res) {
+        setSyncStatus({ synced: false, reason: res.abha_error });
+      }
+      setTimeout(() => {
+        setActiveConsultation(null);
+        setFhirData(null);
+        setSessionDocs([]);
+        setAiSummary(null);
+        setAbhaHistory([]);
+        setSyncStatus(null);
+      }, 2400);
     } catch (err) {
       alert(err.message || 'Failed to complete consultation');
     } finally {
@@ -524,6 +560,77 @@ export default function DoctorDashboard() {
                       )}
                     </div>
 
+                    {/* Universal ABHA Health Records (Cross-Hospital History) */}
+                    <div className="bg-white p-5 rounded-xl border border-blue-200 shadow-sm">
+                      <div className="flex justify-between items-center mb-3 border-b pb-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                            <History className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <h3 className="font-bold text-gray-900 text-base flex items-center">
+                              Universal ABHA Health Records
+                              <span className="ml-2 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-semibold">
+                                ABDM Central Network
+                              </span>
+                            </h3>
+                            <p className="text-xs text-gray-500">
+                              Patient ABHA ID: <span className="font-mono font-semibold text-gray-700">{activeConsultation.abha_id || patient.abha_id || '12-3456-7890-1234'}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => fetchAbhaHistory(activeConsultation)}
+                          disabled={loadingAbha}
+                          className="text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition font-medium flex items-center"
+                        >
+                          <RefreshCw className={`w-3 h-3 mr-1 ${loadingAbha ? 'animate-spin' : ''}`} />
+                          {loadingAbha ? 'Refreshing...' : 'Refresh Central'}
+                        </button>
+                      </div>
+
+                      {loadingAbha ? (
+                        <div className="py-4 text-center text-xs text-gray-500 animate-pulse">
+                          Fetching longitudinal health records from Central ABHA Server (Port 8005)...
+                        </div>
+                      ) : abhaHistory.length > 0 ? (
+                        <div className="space-y-3">
+                          <p className="text-xs text-gray-600 font-medium">
+                            Found <strong>{abhaHistory.length}</strong> previous hospital encounter(s) in Central Health Database:
+                          </p>
+                          {abhaHistory.map((rec, i) => (
+                            <div key={rec.record_id || i} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-blue-800 flex items-center">
+                                  🏥 {rec.hospital_name || 'Hospital Visit'}
+                                </span>
+                                <span className="text-gray-500 font-mono">
+                                  📅 {new Date(rec.date).toLocaleDateString()} ({new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-700">
+                                <p><strong className="text-gray-900">Treating Doctor:</strong> {rec.doctor_name} ({rec.doctor_specialization || 'Physician'})</p>
+                                <p className="mt-0.5"><strong className="text-gray-900">Diagnosis:</strong> <span className="text-emerald-800 font-semibold">{rec.diagnosis}</span></p>
+                                {rec.chief_complaint && (
+                                  <p className="mt-0.5 text-gray-600"><strong>Symptoms:</strong> {rec.chief_complaint}</p>
+                                )}
+                              </div>
+                              <div className="bg-white p-2.5 rounded-lg border border-emerald-200 text-xs">
+                                <span className="font-bold text-emerald-900 block mb-0.5">Prescription & Rx:</span>
+                                <p className="text-gray-800 font-mono text-[11px] whitespace-pre-wrap">{rec.prescription}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="py-3 px-4 bg-gray-50 rounded-lg text-xs text-gray-500 flex items-center justify-between">
+                          <span>No previous cross-hospital records found in Central ABHA Repository for this patient.</span>
+                          <span className="text-gray-400">First recorded visit on network</span>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Structured Summary */}
                     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                       <div className="flex justify-between items-center mb-4 border-b pb-2">
@@ -620,13 +727,28 @@ export default function DoctorDashboard() {
 
                   {/* Footer actions */}
                   <div className="p-4 border-t border-gray-200 bg-white flex justify-between items-center shrink-0">
-                    <p className="text-xs text-gray-400 font-medium hidden sm:block">Time saved: ~3 mins per consult</p>
+                    <div>
+                      {syncStatus && syncStatus.synced && (
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                          ✅ Synced to Central ABHA Registry (Record ID: {syncStatus.record_id ? syncStatus.record_id.slice(-8) : 'CONFIRMED'})
+                        </span>
+                      )}
+                      {syncStatus && !syncStatus.synced && (
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          ⚠️ ABHA Sync Pending: {syncStatus.reason || 'Central Server offline'}
+                        </span>
+                      )}
+                      {!syncStatus && (
+                        <p className="text-xs text-gray-400 font-medium hidden sm:block">Time saved: ~3 mins per consult</p>
+                      )}
+                    </div>
                     <button
+                      type="button"
                       onClick={handleComplete}
                       disabled={isCompleting}
                       className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-lg font-bold flex items-center shadow-md transition disabled:opacity-50"
                     >
-                      <CheckCircle className="w-5 h-5 mr-2" /> {isCompleting ? 'Saving...' : 'Verify & Push to HIS'}
+                      <CheckCircle className="w-5 h-5 mr-2" /> {isCompleting ? 'Saving & Syncing...' : 'Verify & Push to HIS'}
                     </button>
                   </div>
                 </>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, FileUp, Activity, CheckCircle, ShieldCheck, AlertTriangle,
@@ -187,8 +187,26 @@ export default function KioskFlow() {
   const location = useLocation();
   const { doctors, submitKioskIntake, handleAuthSuccess } = useGlobal();
 
-  const kioskHospitalId   = location.state?.hospital_id   || null;
-  const kioskHospitalName = location.state?.hospital_name || null;
+  const [searchParams] = useSearchParams();
+  const urlHospId = searchParams.get('hospital_id');
+  const urlKioskId = searchParams.get('kiosk_id');
+
+  // Priority: URL Param -> Location State -> LocalStorage -> Registered Hospital Default
+  const [kioskHospitalId, setKioskHospitalId] = useState(
+    urlHospId || location.state?.hospital_id || localStorage.getItem('mediKiosk_hospital_id') || '6a9c3b6bf41dd3e1afb895f1'
+  );
+  const [kioskId, setKioskId] = useState(
+    urlKioskId || location.state?.kiosk_id || localStorage.getItem('mediKiosk_kiosk_id') || 'KIOSK-01'
+  );
+  const [kioskHospitalName, setKioskHospitalName] = useState(
+    location.state?.hospital_name || localStorage.getItem('mediKiosk_hospital_name') || 'testHospital medical college'
+  );
+
+  useEffect(() => {
+    if (kioskHospitalId) localStorage.setItem('mediKiosk_hospital_id', kioskHospitalId);
+    if (kioskId) localStorage.setItem('mediKiosk_kiosk_id', kioskId);
+    if (kioskHospitalName) localStorage.setItem('mediKiosk_hospital_name', kioskHospitalName);
+  }, [kioskHospitalId, kioskId, kioskHospitalName]);
 
   const [localDoctors, setLocalDoctors] = useState([]);
   const { speak, stopSpeaking, startListening, stopListening, isListening, isSpeaking, isSupported, bhasiniAvailable, voiceProvider, isVoiceLoading, voiceLoadingText } = useSpeech();
@@ -256,8 +274,10 @@ export default function KioskFlow() {
   }, [intakeData.mode]);
 
   useEffect(() => {
-    api.getDoctors().then(d => { if (Array.isArray(d) && d.length > 0) setLocalDoctors(d); }).catch(() => {});
-  }, []);
+    api.getDoctors({ hospital_id: kioskHospitalId }).then(d => {
+      if (Array.isArray(d) && d.length > 0) setLocalDoctors(d);
+    }).catch(() => {});
+  }, [kioskHospitalId]);
 
   const handleAbhaLookup = async () => {
     if (!abhaInput.trim()) { setLookupError('Please enter an ABHA ID or mobile number.'); return; }
@@ -282,6 +302,7 @@ export default function KioskFlow() {
         abha_id: !isPhone ? abhaInput : undefined,
         phone:   isPhone  ? abhaInput : demographics?.phone,
         hospital_id: kioskHospitalId,
+        kiosk_id: kioskId,
         abha_demographics: demographics,
       };
       const res = await api.kioskCheckin(params);
@@ -375,7 +396,7 @@ export default function KioskFlow() {
     if (sessionId) return sessionId;
     try {
       const patId = patient?.id || patient?._id || 1;
-      const sRes  = await api.createSession({ patient_id: patId, ayush_mode: intakeData.mode === 'AYUSH', hospital_id: kioskHospitalId });
+      const sRes  = await api.createSession({ patient_id: patId, ayush_mode: intakeData.mode === 'AYUSH', hospital_id: kioskHospitalId, kiosk_id: kioskId });
       const sid   = sRes.session_id || sRes.id;
       setSessionId(sid);
       return sid;
@@ -598,10 +619,16 @@ export default function KioskFlow() {
           <div className="flex items-center">
             <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-10 h-10 mr-3 drop-shadow-md" />
             <div>
-              <h1 className="text-xl font-bold">PurvArogya</h1>
-              <p className="text-xs text-brand-200">
-                Patient MediKiosk — {selectedLanguage}
-                {kioskHospitalName && <span className="ml-2 bg-brand-700 px-2 py-0.5 rounded-full">{kioskHospitalName}</span>}
+              <h1 className="text-xl font-bold flex items-center space-x-2">
+                <span>PurvArogya</span>
+                <span className="text-xs bg-brand-700 font-mono text-brand-100 px-2.5 py-0.5 rounded-full border border-brand-600">
+                  {kioskId || 'KIOSK-01'}
+                </span>
+              </h1>
+              <p className="text-xs text-brand-200 flex items-center space-x-1.5 mt-0.5">
+                <span>🏥 {kioskHospitalName || 'Hospital Network'}</span>
+                <span>•</span>
+                <span>{selectedLanguage}</span>
               </p>
             </div>
           </div>

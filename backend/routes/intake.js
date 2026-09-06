@@ -119,8 +119,12 @@ router.post("/", requireAuth, async (req, res) => {
 
     const token = await genToken();
     const submitted_at = status === "submitted" ? new Date().toISOString() : null;
+    const assignedHospId = req.body.hospital_id || patient.hospital_id || req.user.hospital_id;
+    const assignedKioskId = req.body.kiosk_id || req.user.kiosk_id || "KIOSK-01";
+
     const session = await IntakeSession.create({
       token, patient_id: patient.id, doctor_id: assignedDocId || null,
+      hospital_id: assignedHospId, kiosk_id: assignedKioskId,
       ayush_mode: !!ayush_mode, consent_given: !!consent_given, status,
       chief_complaint: chief_complaint || null, submitted_at,
     });

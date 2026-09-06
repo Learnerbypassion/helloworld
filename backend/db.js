@@ -129,6 +129,7 @@ const IntakeSessionSchema = new mongoose.Schema(
     fhir_bundle: { type: Object },
     recommended_doctor_id: { type: mongoose.Schema.Types.Mixed, ref: "Doctor" },
     hospital_id: { type: mongoose.Schema.Types.Mixed, ref: "Hospital" },
+    kiosk_id: { type: String, default: "KIOSK-01" },
   },
   schemaOptions
 );

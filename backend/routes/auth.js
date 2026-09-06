@@ -133,53 +133,17 @@ router.get("/doctors", async (req, res) => {
       } catch (e) {}
     }
 
-    // Get all registered active hospital IDs
-    const hospitals = await Hospital.find().select("_id");
-    const validHospitalIds = new Set(hospitals.map(h => h._id.toString()));
-
     const allActiveDoctors = await Doctor.find({ active: true }).sort({ name: 1 });
+    const targetHospId = req.query.hospital_id || decoded?.hospital_id;
 
-    const isConnectedToHospital = (d) => {
-      if (!d.hospital_id) return false;
-      const hid = d.hospital_id.toString();
-      if (hid === "independent" || hid === "default" || hid === "none") return false;
-      return validHospitalIds.has(hid);
-    };
-
-    // Case 1: Self-served patient -> ONLY show doctors who are NOT connected to any hospital
-    const isSelfServed = decoded?.is_self_served === true || 
-                         (decoded?.role === "patient" && (!decoded?.hospital_id || decoded?.hospital_id === "independent" || !validHospitalIds.has(decoded.hospital_id.toString())));
-
-    if (isSelfServed) {
-      const independentDoctors = allActiveDoctors.filter(d => !isConnectedToHospital(d));
-      // If independent doctors are available, return them; otherwise fallback to all hospital doctors
-      if (independentDoctors.length > 0) {
-        return res.json(independentDoctors);
+    if (targetHospId && targetHospId !== "all" && targetHospId !== "independent") {
+      const hospDocs = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === targetHospId.toString());
+      if (hospDocs.length > 0) {
+        return res.json(hospDocs);
       }
-      return res.json(allActiveDoctors);
     }
 
-    // Case 2: Receptionist-registered patient -> ONLY show doctors registered in that hospital
-    if (decoded?.role === "patient" && decoded?.hospital_id && validHospitalIds.has(decoded.hospital_id.toString())) {
-      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === decoded.hospital_id.toString());
-      return res.json(hospitalDoctors);
-    }
-
-    // Case 3: Hospital Admin or Receptionist -> show only their hospital's doctors
-    if ((decoded?.role === "hospital_admin" || decoded?.role === "receptionist") && decoded?.hospital_id) {
-      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === decoded.hospital_id.toString());
-      return res.json(hospitalDoctors);
-    }
-
-    // Case 4: Explicit query parameter ?hospital_id=...
-    if (req.query.hospital_id) {
-      const hospitalDoctors = allActiveDoctors.filter(d => d.hospital_id && d.hospital_id.toString() === req.query.hospital_id.toString());
-      return res.json(hospitalDoctors);
-    }
-
-    // Default for unauthenticated kiosk walk-in preview: show independent doctors
-    const independentDoctors = allActiveDoctors.filter(d => !isConnectedToHospital(d));
-    res.json(independentDoctors.length > 0 ? independentDoctors : allActiveDoctors);
+    return res.json(allActiveDoctors);
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to fetch doctors" });
   }
@@ -440,7 +404,7 @@ router.post("/patient/login", async (req, res) => {
 // ---------- Patient Kiosk Check-In (ABHA ID or Phone) ----------
 router.post("/patient/kiosk-checkin", async (req, res) => {
   try {
-    const { abha_id, phone, hospital_id: reqHospitalId, abha_demographics } = req.body;
+    const { abha_id, phone, hospital_id: reqHospitalId, kiosk_id, abha_demographics } = req.body;
     let patient = null;
     if (abha_id) {
       patient = await Patient.findOne({ abha_id: abha_id.trim() });
@@ -450,39 +414,33 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
       patient = await Patient.findOne({ phone: new RegExp(cleanPhone + "$") });
     }
 
-    let isSelfServed = false;
-    const registeredHospitals = await Hospital.find().select("_id");
-    const validHospIds = new Set(registeredHospitals.map(h => h._id.toString()));
+    // Resolve active hospital for this kiosk
+    let assignedHospId = reqHospitalId;
+    if (!assignedHospId || assignedHospId === "independent" || assignedHospId === "default") {
+      const firstHosp = await Hospital.findOne();
+      assignedHospId = firstHosp ? firstHosp._id.toString() : "default";
+    }
 
     if (patient) {
       // If ABHA registry returned fresh demographics, update the DB record
-      // (handles old test patients with wrong names like "LISHI")
-      if (abha_demographics && abha_demographics.name) {
-        const updates = {};
-        if (abha_demographics.name  && abha_demographics.name !== patient.name)   updates.name   = abha_demographics.name;
-        if (abha_demographics.dob   && !patient.dob)                               updates.dob    = abha_demographics.dob;
-        if (abha_demographics.age   && !patient.age)                               updates.age    = abha_demographics.age;
-        if (abha_demographics.gender && !patient.gender)                           updates.gender = abha_demographics.gender;
-        if (abha_demographics.address && !patient.address)                         updates.address = abha_demographics.address;
-        if (abha_id && !patient.abha_id)                                           updates.abha_id = abha_id;
-        if (Object.keys(updates).length > 0) {
-          patient = await Patient.findByIdAndUpdate(patient.id, updates, { new: true });
-        }
-      }
-
-      // Patient was previously registered (by a receptionist or admin)
-      if (patient.hospital_id && validHospIds.has(patient.hospital_id.toString())) {
-        isSelfServed = false;
-      } else {
-        isSelfServed = true;
+      const updates = {};
+      if (abha_demographics?.name && abha_demographics.name !== patient.name) updates.name = abha_demographics.name;
+      if (abha_demographics?.dob && !patient.dob) updates.dob = abha_demographics.dob;
+      if (abha_demographics?.age && !patient.age) updates.age = abha_demographics.age;
+      if (abha_demographics?.gender && !patient.gender) updates.gender = abha_demographics.gender;
+      if (abha_demographics?.address && !patient.address) updates.address = abha_demographics.address;
+      if (abha_id && !patient.abha_id) updates.abha_id = abha_id;
+      // Adopt patient to this kiosk's hospital for this visit!
+      if (assignedHospId && assignedHospId !== "default") updates.hospital_id = assignedHospId;
+      if (Object.keys(updates).length > 0) {
+        patient = await Patient.findByIdAndUpdate(patient.id, updates, { new: true });
       }
     } else {
-      // Patient is a walk-in self-served kiosk patient (not added by receptionist)
-      isSelfServed = true;
+      // New walk-in kiosk patient
       const cleanPhone = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "9876543210";
       const abhaVal = abha_id || "12-3456-7890-1234";
       patient = await Patient.create({
-        hospital_id: "independent",
+        hospital_id: assignedHospId,
         name: abha_demographics?.name || "Self-Service Patient",
         phone: cleanPhone,
         abha_id: abhaVal,
@@ -497,17 +455,16 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
     const token = signToken({
       role: "patient",
       id: patient.id,
-      hospital_id: isSelfServed ? "independent" : patient.hospital_id,
-      is_self_served: isSelfServed,
+      hospital_id: patient.hospital_id || assignedHospId,
+      kiosk_id: kiosk_id || "KIOSK-01",
       name: patient.name
     });
 
-    res.json({ token, patient, is_self_served: isSelfServed });
+    res.json({ token, patient, is_self_served: true, hospital_id: patient.hospital_id });
   } catch (err) {
     res.status(500).json({ error: err.message || "Kiosk check-in failed" });
   }
 });
-
 
 // ---------- ABHA Lookup (Mock Registry) ----------
 router.get("/abha/lookup", async (req, res) => {
@@ -544,7 +501,7 @@ router.get("/abha/lookup", async (req, res) => {
     }
 
     // 2. Check mock ABHA registry
-    const abhaRecord = lookupAbha({ abha_id, phone });
+    const abhaRecord = await lookupAbha({ abha_id, phone });
     if (abhaRecord) {
       return res.json({ found: true, source: "mock_registry", patient: abhaRecord });
     }

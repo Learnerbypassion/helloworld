@@ -1,12 +1,12 @@
 /**
- * MediKiosk — Mock ABHA Registry
+ * MediKiosk — ABHA Registry Client (Single Source of Truth)
  *
- * A local in-memory mock of the National Health Authority ABHA registry.
- * Returns patient demographics by ABHA ID (14-digit, dashes optional) or phone.
- *
- * In production, replace lookupAbha() with a signed NHA ABHA API call.
- * All demo data is fictional and safe for testing.
+ * Proxies lookup queries directly to the Mock National ABHA Central Server (Port 8005),
+ * with graceful in-memory fallback if the central server is booting or offline.
  */
+const axios = require("axios");
+
+const ABHA_SERVER_URL = process.env.ABHA_SERVER_URL || "http://localhost:8005";
 
 const ABHA_PATIENTS = [
   { abha_id: "12-3456-7890-1234", name: "Ananya Sharma",   dob: "1990-05-15", age: 35, gender: "Female", phone: "9876543210", address: "42 MG Road, Bengaluru, Karnataka", blood_group: "B+" },
@@ -23,22 +23,34 @@ const ABHA_PATIENTS = [
 
 function normaliseAbhaId(raw) {
   const digits = (raw || "").replace(/[^0-9]/g, "");
-  if (digits.length !== 14) return digits;
+  if (digits.length !== 14) return (raw || "").trim();
   return `${digits.slice(0,2)}-${digits.slice(2,6)}-${digits.slice(6,10)}-${digits.slice(10)}`;
 }
 
-function lookupAbha({ abha_id, phone } = {}) {
+async function lookupAbha({ abha_id, phone } = {}) {
+  const query = abha_id || phone;
+  if (query) {
+    try {
+      const res = await axios.get(`${ABHA_SERVER_URL}/api/patients/${encodeURIComponent(query.trim())}`, { timeout: 3000 });
+      if (res.data?.found && res.data?.patient) {
+        return { ...res.data.patient, source: "mock_central_server" };
+      }
+    } catch (_) {
+      // Graceful fallback to local seed data if server is offline
+    }
+  }
+
   if (abha_id) {
     const norm = normaliseAbhaId(abha_id);
     const found = ABHA_PATIENTS.find(p => normaliseAbhaId(p.abha_id) === norm);
-    if (found) return { ...found, abha_id: normaliseAbhaId(found.abha_id), source: "mock_registry" };
+    if (found) return { ...found, abha_id: normaliseAbhaId(found.abha_id), source: "mock_local_fallback" };
   }
   if (phone) {
     const clean = phone.replace(/[^0-9]/g, "").slice(-10);
     const found = ABHA_PATIENTS.find(p => p.phone.slice(-10) === clean);
-    if (found) return { ...found, abha_id: normaliseAbhaId(found.abha_id), source: "mock_registry" };
+    if (found) return { ...found, abha_id: normaliseAbhaId(found.abha_id), source: "mock_local_fallback" };
   }
   return null;
 }
 
-module.exports = { lookupAbha, ABHA_PATIENTS };
+module.exports = { lookupAbha, ABHA_PATIENTS, normaliseAbhaId };
