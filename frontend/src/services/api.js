@@ -123,4 +123,29 @@ export const api = {
 
   // AYUSH guided questions
   getAyushQuestions: () => apiFetch('/ayush/questions'),
+
+  // ABHA Registry Lookup
+  abhaLookup: (params) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiFetch(`/auth/abha/lookup?${qs}`);
+  },
+
+  // AI HPI follow-up questions
+  getHpiQuestions: (sessionId) => apiFetch(`/sessions/${sessionId}/hpi-questions`, { method: 'POST' }),
+
+  // AI Doctor Recommendation
+  recommendDoctor: (sessionId) => apiFetch(`/sessions/${sessionId}/recommend-doctor`, { method: 'POST' }),
+
+  // Bhasini / Sarvam Translation
+  translate: (text, targetLanguage, sourceLanguage = 'English') =>
+    apiFetch('/bhasini/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage, sourceLanguage }) }),
+
+  // Bhasini TTS
+  bhasiniTts: (text, language) => apiFetch('/bhasini/tts', { method: 'POST', body: JSON.stringify({ text, language }) }),
+
+  // Bhasini ASR (send base64 audio)
+  bhasiniAsr: (audioBase64, language) => apiFetch('/bhasini/asr', { method: 'POST', body: JSON.stringify({ audioBase64, language }) }),
+
+  // Bhasini status
+  bhasiniStatus: () => apiFetch('/bhasini/status'),
 };

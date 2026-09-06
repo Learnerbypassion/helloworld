@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs");
 const { Hospital, Doctor, Receptionist, Patient } = require("../db");
 const { signToken, requireAuth, requireRole } = require("../auth");
 
+const { lookupAbha } = require("../mockAbhaRegistry");
 const router = express.Router();
 const SALT_ROUNDS = 10;
 const phoneOtps = new Map();
@@ -151,7 +152,11 @@ router.get("/doctors", async (req, res) => {
 
     if (isSelfServed) {
       const independentDoctors = allActiveDoctors.filter(d => !isConnectedToHospital(d));
-      return res.json(independentDoctors);
+      // If independent doctors are available, return them; otherwise fallback to all hospital doctors
+      if (independentDoctors.length > 0) {
+        return res.json(independentDoctors);
+      }
+      return res.json(allActiveDoctors);
     }
 
     // Case 2: Receptionist-registered patient -> ONLY show doctors registered in that hospital
@@ -435,7 +440,7 @@ router.post("/patient/login", async (req, res) => {
 // ---------- Patient Kiosk Check-In (ABHA ID or Phone) ----------
 router.post("/patient/kiosk-checkin", async (req, res) => {
   try {
-    const { abha_id, phone } = req.body;
+    const { abha_id, phone, hospital_id: reqHospitalId, abha_demographics } = req.body;
     let patient = null;
     if (abha_id) {
       patient = await Patient.findOne({ abha_id: abha_id.trim() });
@@ -450,6 +455,21 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
     const validHospIds = new Set(registeredHospitals.map(h => h._id.toString()));
 
     if (patient) {
+      // If ABHA registry returned fresh demographics, update the DB record
+      // (handles old test patients with wrong names like "LISHI")
+      if (abha_demographics && abha_demographics.name) {
+        const updates = {};
+        if (abha_demographics.name  && abha_demographics.name !== patient.name)   updates.name   = abha_demographics.name;
+        if (abha_demographics.dob   && !patient.dob)                               updates.dob    = abha_demographics.dob;
+        if (abha_demographics.age   && !patient.age)                               updates.age    = abha_demographics.age;
+        if (abha_demographics.gender && !patient.gender)                           updates.gender = abha_demographics.gender;
+        if (abha_demographics.address && !patient.address)                         updates.address = abha_demographics.address;
+        if (abha_id && !patient.abha_id)                                           updates.abha_id = abha_id;
+        if (Object.keys(updates).length > 0) {
+          patient = await Patient.findByIdAndUpdate(patient.id, updates, { new: true });
+        }
+      }
+
       // Patient was previously registered (by a receptionist or admin)
       if (patient.hospital_id && validHospIds.has(patient.hospital_id.toString())) {
         isSelfServed = false;
@@ -463,9 +483,13 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
       const abhaVal = abha_id || "12-3456-7890-1234";
       patient = await Patient.create({
         hospital_id: "independent",
-        name: "Self-Service Patient",
+        name: abha_demographics?.name || "Self-Service Patient",
         phone: cleanPhone,
         abha_id: abhaVal,
+        dob: abha_demographics?.dob || null,
+        age: abha_demographics?.age || null,
+        gender: abha_demographics?.gender || null,
+        address: abha_demographics?.address || null,
         language: "English"
       });
     }
@@ -481,6 +505,54 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
     res.json({ token, patient, is_self_served: isSelfServed });
   } catch (err) {
     res.status(500).json({ error: err.message || "Kiosk check-in failed" });
+  }
+});
+
+
+// ---------- ABHA Lookup (Mock Registry) ----------
+router.get("/abha/lookup", async (req, res) => {
+  try {
+    const { abha_id, phone } = req.query;
+    if (!abha_id && !phone) {
+      return res.status(400).json({ error: "abha_id or phone is required" });
+    }
+
+    // 1. Check real DB first (patient may already be registered)
+    let dbPatient = null;
+    if (abha_id) {
+      dbPatient = await Patient.findOne({ abha_id: abha_id.trim() });
+    }
+    if (!dbPatient && phone) {
+      const cleanPhone = phone.replace(/[^0-9]/g, "").slice(-10);
+      dbPatient = await Patient.findOne({ phone: new RegExp(cleanPhone + "$") });
+    }
+    if (dbPatient) {
+      return res.json({
+        found: true,
+        source: "db",
+        patient: {
+          name:        dbPatient.name,
+          dob:         dbPatient.dob,
+          age:         dbPatient.age,
+          gender:      dbPatient.gender,
+          phone:       dbPatient.phone,
+          abha_id:     dbPatient.abha_id,
+          address:     dbPatient.address,
+          blood_group: dbPatient.blood_group,
+        },
+      });
+    }
+
+    // 2. Check mock ABHA registry
+    const abhaRecord = lookupAbha({ abha_id, phone });
+    if (abhaRecord) {
+      return res.json({ found: true, source: "mock_registry", patient: abhaRecord });
+    }
+
+    // 3. Not found — new patient
+    return res.json({ found: false, patient: null });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "ABHA lookup failed" });
   }
 });
 

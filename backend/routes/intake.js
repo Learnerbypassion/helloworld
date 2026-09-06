@@ -315,4 +315,139 @@ router.get("/:id", requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message || "Failed to get session details" }); }
 });
 
+
+// ---------- Clinical HPI follow-up questions (Hybrid AI + Database) ----------
+router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
+  try {
+    const s = await sessionOr404(req.params.id, res);
+    if (!s) return;
+
+    const { ClinicalQuestion } = require("../db");
+    const { generateHpiQuestions } = require("../summarizer");
+
+    const sessionObj = s.toObject();
+    const cc = (sessionObj.chief_complaint || "").toLowerCase();
+    const sid = (sessionObj.symptom_id || "").toLowerCase();
+    const transcript = (sessionObj.transcript || "").trim();
+    const forceAi = req.body?.force_ai === true;
+
+    let matchedStandardKey = null;
+    if (sid.includes("fever") || cc.includes("fever") || cc.includes("জ্বর") || cc.includes("बुखार")) {
+      matchedStandardKey = "fever";
+    } else if (sid.includes("cough") || cc.includes("cough") || cc.includes("কাশি") || cc.includes("खांसी")) {
+      matchedStandardKey = "cough";
+    } else if (sid.includes("stomach") || cc.includes("stomach") || cc.includes("পেট") || cc.includes("पेट")) {
+      matchedStandardKey = "stomach";
+    } else if (sid.includes("chest") || cc.includes("chest") || cc.includes("বুক") || cc.includes("सीने")) {
+      matchedStandardKey = "chest";
+    } else if (sid.includes("headache") || cc.includes("headache") || cc.includes("মাথা") || cc.includes("सिर")) {
+      matchedStandardKey = "headache";
+    }
+
+    // Hybrid Decision: If patient provided voice transcript OR new/custom disease OR multiple symptoms -> USE AI!
+    const hasVoiceDetails = transcript.length > 5;
+    const isMultiSymptom = cc.includes(",") || cc.includes("and") || cc.includes("এবং") || cc.includes("और");
+    const isNewDisease = !matchedStandardKey || /rash|skin|eye|urinary|breath|weakness|joint|ear|throat|wound|fracture|dengue|malaria|allergy|diabetes|sugar|pressure|heart|kidney|liver|infection|backache|pain/i.test(cc);
+    const shouldUseAi = forceAi || hasVoiceDetails || isNewDisease || isMultiSymptom;
+
+    if (shouldUseAi) {
+      console.log("[HPI Hybrid] Generating AI questions for: " + cc);
+      try {
+        const aiQs = await generateHpiQuestions(sessionObj);
+        if (Array.isArray(aiQs) && aiQs.length > 0) {
+          return res.json({
+            source: "ai",
+            is_custom: true,
+            questions: aiQs.map((q, idx) => ({
+              question_id: "ai_" + (idx + 1),
+              english: q,
+              type: /1-10|scale|severity|rate/i.test(q) ? "scale" : (/when|how long|since|start|began/i.test(q) ? "duration" : "chips"),
+              translations: {},
+              options: null,
+            }))
+          });
+        }
+      } catch (err) {
+        console.warn("[HPI Hybrid] AI generation failed, falling back to DB:", err.message);
+      }
+    }
+
+    // Otherwise use pre-stored database questions for instant zero-latency rendering
+    const targetKey = matchedStandardKey || "general";
+    let dbQuestions = await ClinicalQuestion.find({ symptom_key: targetKey, active: true }).sort({ question_order: 1 });
+    if (!dbQuestions || dbQuestions.length === 0) {
+      dbQuestions = await ClinicalQuestion.find({ symptom_key: "general", active: true }).sort({ question_order: 1 });
+    }
+
+    if (dbQuestions && dbQuestions.length > 0) {
+      return res.json({
+        source: "database",
+        is_custom: false,
+        questions: dbQuestions.map(q => ({
+          question_id: q._id.toString(),
+          symptom_key: q.symptom_key,
+          type: q.type,
+          english: q.english,
+          translations: q.translations,
+          options: q.options,
+        }))
+      });
+    }
+
+    res.json({ source: "fallback", questions: [] });
+  } catch (err) {
+    res.status(500).json({ questions: [], error: err.message });
+  }
+});
+
+// ---------- AI-recommended doctor ----------
+router.post("/:id/recommend-doctor", requireAuth, async (req, res) => {
+  try {
+    const s = await sessionOr404(req.params.id, res);
+    if (!s) return;
+
+    const { Doctor, Hospital } = require("../db");
+    const { recommendDoctor } = require("../summarizer");
+
+    // Determine which hospital's doctors to consider
+    const patient = await Patient.findById(s.patient_id);
+    let candidateDoctors = [];
+
+    const registeredHospitals = await Hospital.find().select("_id");
+    const validHospIds = new Set(registeredHospitals.map(h => h._id.toString()));
+
+    const hospitalId = s.hospital_id || (patient?.hospital_id?.toString() !== "independent" ? patient?.hospital_id : null);
+
+    if (hospitalId && validHospIds.has(hospitalId.toString())) {
+      candidateDoctors = await Doctor.find({ hospital_id: hospitalId, active: true });
+    } else {
+      // Self-served patient — show independent doctors only
+      const allDocs = await Doctor.find({ active: true });
+      candidateDoctors = allDocs.filter(d => {
+        if (!d.hospital_id) return true;
+        const hid = d.hospital_id.toString();
+        return hid === "independent" || hid === "default" || hid === "none" || !validHospIds.has(hid);
+      });
+      // Fallback: If no independent doctors exist, recommend from all hospital doctors
+      if (candidateDoctors.length === 0) {
+        candidateDoctors = allDocs;
+      }
+    }
+
+    if (candidateDoctors.length === 0) {
+      return res.json({ recommended_doctor_id: null, rationale: "No doctors available" });
+    }
+
+    const rec = await recommendDoctor(s.toObject(), candidateDoctors.map(d => d.toObject()));
+    const recDocId = rec?.doctor_id || candidateDoctors[0].id;
+
+    // Store recommendation
+    await IntakeSession.findByIdAndUpdate(s.id, { recommended_doctor_id: recDocId });
+
+    res.json({ recommended_doctor_id: recDocId, rationale: rec?.rationale || "" });
+  } catch (err) {
+    res.status(500).json({ recommended_doctor_id: null, error: err.message });
+  }
+});
+
 module.exports = router;

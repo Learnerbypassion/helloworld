@@ -12,6 +12,7 @@ mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
 }).then(() => {
   console.log("Connected to MongoDB database successfully.");
+  initClinicalQuestions();
 }).catch((err) => {
   console.error("MongoDB connection error:", err.message);
 });
@@ -126,6 +127,8 @@ const IntakeSessionSchema = new mongoose.Schema(
     reviewed_at: { type: String },
     review_seconds: { type: Number },
     fhir_bundle: { type: Object },
+    recommended_doctor_id: { type: mongoose.Schema.Types.Mixed, ref: "Doctor" },
+    hospital_id: { type: mongoose.Schema.Types.Mixed, ref: "Hospital" },
   },
   schemaOptions
 );
@@ -150,6 +153,36 @@ const Patient = mongoose.model("Patient", PatientSchema);
 const IntakeSession = mongoose.model("IntakeSession", IntakeSessionSchema);
 const Document = mongoose.model("Document", DocumentSchema);
 
+// 7. ClinicalQuestion Schema
+const ClinicalQuestionSchema = new mongoose.Schema(
+  {
+    symptom_key: { type: String, required: true },
+    question_order: { type: Number, default: 0 },
+    type: { type: String, default: "chips" },
+    english: { type: String, required: true },
+    translations: { type: Object, default: {} },
+    options: { type: Object, default: {} },
+    active: { type: Boolean, default: true },
+  },
+  schemaOptions
+);
+
+const ClinicalQuestion = mongoose.model("ClinicalQuestion", ClinicalQuestionSchema);
+
+async function initClinicalQuestions() {
+  try {
+    const count = await ClinicalQuestion.countDocuments();
+    if (count === 0) {
+      const { SEED_QUESTIONS } = require("./clinicalQuestionsSeed");
+      await ClinicalQuestion.insertMany(SEED_QUESTIONS);
+      console.log(`Seeded ${SEED_QUESTIONS.length} clinical intake questions into MongoDB.`);
+    }
+  } catch (err) {
+    console.error("Clinical questions seeding error:", err.message);
+  }
+}
+
+
 // Helper function to generate unique kiosk session token A-1, A-2...
 async function genToken() {
   const count = await IntakeSession.countDocuments();
@@ -164,5 +197,7 @@ module.exports = {
   Patient,
   IntakeSession,
   Document,
+  ClinicalQuestion,
+  initClinicalQuestions,
   genToken,
 };

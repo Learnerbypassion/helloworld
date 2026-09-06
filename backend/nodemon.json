@@ -1,0 +1,4 @@
+{
+  "watch": ["server.js", "routes/", "db.js", "mockAbhaRegistry.js", "redFlagRules.js", "summarizer.js", "otpService.js"],
+  "ignore": ["audio_cache/*", "*.json"]
+}

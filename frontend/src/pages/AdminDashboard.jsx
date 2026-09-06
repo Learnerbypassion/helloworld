@@ -1,15 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ShieldCheck, LogOut, Users, Building, Trash2, PlusCircle, 
+  ShieldCheck, LogOut, Users, Building, Trash2, PlusCircle, Monitor,
   Stethoscope, KeyRound, Eye, EyeOff, CheckCircle2, Lock, AlertCircle 
 } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
+import { getStoredUser } from '../services/api';
 import { api } from '../services/api';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { doctors, receptionists, addDoctor, deleteDoctor, addReceptionist, deleteReceptionist, logout } = useGlobal();
+  const storedUser = getStoredUser();
+
+  const openKiosk = () => {
+    navigate('/kiosk', {
+      state: {
+        hospital_id:   storedUser?.hospital_id || storedUser?.id,
+        hospital_name: storedUser?.name || 'Hospital',
+      }
+    });
+  };
+
   const [activeTab, setActiveTab] = useState('doctors'); // 'doctors' or 'receptionists'
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -151,6 +163,12 @@ export default function AdminDashboard() {
             className={`w-full flex items-center px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'receptionists' ? 'bg-brand-800 text-white shadow-sm' : 'text-brand-100 hover:bg-brand-800/50'}`}
           >
             <Users className="w-5 h-5 mr-3" /> Manage Reception
+          </button>
+          <button
+            onClick={openKiosk}
+            className="w-full flex items-center px-4 py-3 rounded-xl font-medium transition-all text-brand-100 hover:bg-brand-800/50 mt-4 border border-brand-700"
+          >
+            <Monitor className="w-5 h-5 mr-3 text-green-400" /> Open Patient Kiosk
           </button>
         </nav>
         <div className="p-4 border-t border-brand-800">

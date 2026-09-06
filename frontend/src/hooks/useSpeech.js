@@ -1,22 +1,15 @@
 /**
- * useSpeech -- Web Speech API hook for MediKiosk kiosk flow
+ * useSpeech — Multilingual ASR / TTS hook for MediKiosk
  *
- * Provides:
- *   speak(text, lang)           -- TTS: reads text aloud in given language
- *   startListening(lang, cb, errCb) -- ASR: starts recognition, calls cb(transcript)
- *   stopListening()             -- stops active recognition
- *   isListening  {bool}
- *   isSpeaking   {bool}
- *   isSupported  { tts: bool, asr: bool }
- *
- * Language code mapping (BCP-47):
- *   English->en-IN, Hindi->hi-IN, Tamil->ta-IN, Bengali->bn-IN,
- *   Marathi->mr-IN, Telugu->te-IN, Kannada->kn-IN, Gujarati->gu-IN
- *
- * Swap note: Replace the bodies of speak() and startListening() to plug in
- * Bhashini / Sarvam / any cloud ASR-TTS without changing KioskFlow.jsx.
+ * Priority chain:
+ *   1. Client In-Memory Cache (0ms instant playback for already generated audio)
+ *   2. Server Persistent Cache (backend/audio_cache, <10ms instant response)
+ *   3. Sarvam AI (https://api.sarvam.ai) / Bhashini — backend proxy at /api/bhasini
+ *   4. Web Speech API fallback (browser built-in)
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const LANGUAGE_CODES = {
   'English':  'en-IN',
@@ -31,70 +24,293 @@ export const LANGUAGE_CODES = {
 
 export const SUPPORTED_LANGUAGES = Object.keys(LANGUAGE_CODES);
 
+const BHASINI_LANG_NAME = {
+  'English':  'English',
+  'Hindi':    'Hindi',
+  'Tamil':    'Tamil',
+  'Bengali':  'Bengali',
+  'Marathi':  'Marathi',
+  'Telugu':   'Telugu',
+  'Kannada':  'Kannada',
+  'Gujarati': 'Gujarati',
+};
+
+// Client-side in-memory cache for 0ms instant playback across language switches
+const clientAudioCache = new Map(); // key -> blobUrl
+
+async function checkBhasiniAvailable() {
+  try {
+    const res = await fetch(`${API_BASE}/bhasini/status`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return { available: false, provider: 'none' };
+    const data = await res.json();
+    return { available: !!data.available, provider: data.provider || 'none', label: data.label || '' };
+  } catch {
+    return { available: false, provider: 'none' };
+  }
+}
+
 export function useSpeech() {
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const recognitionRef = useRef(null);
+  const [isListening, setIsListening]         = useState(false);
+  const [isSpeaking, setIsSpeaking]           = useState(false);
+  const [isVoiceLoading, setIsVoiceLoading]   = useState(false);
+  const [voiceLoadingText, setVoiceLoadingText] = useState('');
+  const [bhasiniAvailable, setBhasiniAvailable] = useState(false);
+  const [voiceProvider, setVoiceProvider]       = useState('none');
+
+  const recognitionRef     = useRef(null);
+  const audioRef           = useRef(null);
+  const abortControllerRef = useRef(null);
+  const speechSequenceRef  = useRef(0);
 
   const isSupported = {
     tts: typeof window !== 'undefined' && 'speechSynthesis' in window,
     asr: typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window),
   };
 
-  const speak = useCallback((text, lang = 'en-IN') => {
+  // Check Bhasini / Sarvam availability once on mount
+  useEffect(() => {
+    checkBhasiniAvailable().then(info => {
+      setBhasiniAvailable(info.available);
+      setVoiceProvider(info.provider);
+    }).catch(() => {
+      setBhasiniAvailable(false);
+      setVoiceProvider('none');
+    });
+  }, []);
+
+  // ---- Instant Stop --------------------------------------------------------
+  const stopSpeaking = useCallback(() => {
+    // Invalidate sequence so in-flight fetch is dropped
+    speechSequenceRef.current++;
+    if (abortControllerRef.current) {
+      try { abortControllerRef.current.abort(); } catch (_) {}
+      abortControllerRef.current = null;
+    }
+
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch (_) {}
+      audioRef.current = null;
+    }
+
+    if (isSupported.tts && typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
+
+    setIsSpeaking(false);
+    setIsVoiceLoading(false);
+    setVoiceLoadingText('');
+  }, [isSupported.tts]);
+
+  // ---- TTS ----------------------------------------------------------------
+  const speakViaBhasini = useCallback(async (text, lang, currentSeq) => {
+    const cacheKey = `${lang}::${text.trim()}`;
+
+    // 1. Instant Client In-Memory Playback (0ms delay!)
+    if (clientAudioCache.has(cacheKey)) {
+      const cachedUrl = clientAudioCache.get(cacheKey);
+      if (audioRef.current) {
+        try { audioRef.current.pause(); } catch (_) {}
+      }
+      const audio = new Audio(cachedUrl);
+      audioRef.current = audio;
+
+      setIsVoiceLoading(false);
+      setVoiceLoadingText('');
+      setIsSpeaking(true);
+
+      audio.onended = () => {
+        if (speechSequenceRef.current === currentSeq) setIsSpeaking(false);
+      };
+      audio.onerror = () => {
+        if (speechSequenceRef.current === currentSeq) setIsSpeaking(false);
+      };
+
+      await audio.play().catch(() => {});
+      return true;
+    }
+
+    // 2. Fetch from backend (cached on server in <10ms, or generated by Sarvam AI)
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      setIsVoiceLoading(true);
+      setVoiceLoadingText(`Loading ${lang} voice...`);
+
+      const token = localStorage.getItem('medikiosk_token');
+      const resp = await fetch(`${API_BASE}/bhasini/tts`, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ text, language: BHASINI_LANG_NAME[lang] || lang }),
+        signal: controller.signal,
+      });
+
+      // If user switched speech or cancelled while fetch was running, drop it!
+      if (currentSeq !== speechSequenceRef.current) {
+        return false;
+      }
+
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      if (!data.audioContent || data.fallback) return false;
+
+      if (currentSeq !== speechSequenceRef.current) {
+        return false;
+      }
+
+      // Decode base64 WAV into Blob URL
+      const binary = atob(data.audioContent);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const url  = URL.createObjectURL(blob);
+
+      // Save into client cache for instant re-use
+      clientAudioCache.set(cacheKey, url);
+
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      setIsVoiceLoading(false);
+      setVoiceLoadingText('');
+      setIsSpeaking(true);
+
+      audio.onended = () => {
+        if (speechSequenceRef.current === currentSeq) setIsSpeaking(false);
+      };
+      audio.onerror = () => {
+        if (speechSequenceRef.current === currentSeq) setIsSpeaking(false);
+      };
+
+      await audio.play().catch(() => {});
+      return true;
+    } catch (err) {
+      if (err.name === 'AbortError') return false;
+      return false;
+    } finally {
+      if (speechSequenceRef.current === currentSeq) {
+        setIsVoiceLoading(false);
+        setVoiceLoadingText('');
+      }
+    }
+  }, []);
+
+  const speakViaWebSpeech = useCallback((text, lang, currentSeq) => {
     if (!isSupported.tts || !text) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = LANGUAGE_CODES[lang] || lang;
-    utterance.rate = 0.9;
-    utterance.pitch = 1;
-    utterance.onstart  = () => setIsSpeaking(true);
-    utterance.onend    = () => setIsSpeaking(false);
-    utterance.onerror  = () => setIsSpeaking(false);
+    const utterance  = new SpeechSynthesisUtterance(text);
+    utterance.lang   = LANGUAGE_CODES[lang] || lang;
+    utterance.rate   = 0.9;
+    utterance.pitch  = 1;
+    utterance.onstart = () => {
+      if (speechSequenceRef.current === currentSeq) {
+        setIsSpeaking(true);
+      }
+    };
+    utterance.onend = () => {
+      if (speechSequenceRef.current === currentSeq) {
+        setIsSpeaking(false);
+      }
+    };
+    utterance.onerror = () => {
+      if (speechSequenceRef.current === currentSeq) {
+        setIsSpeaking(false);
+      }
+    };
     window.speechSynthesis.speak(utterance);
   }, [isSupported.tts]);
 
-  const stopSpeaking = useCallback(() => {
-    if (isSupported.tts) window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-  }, [isSupported.tts]);
+  const speak = useCallback(async (text, lang = 'English') => {
+    if (!text) return;
 
-  const startListening = useCallback((lang = 'en-IN', onResult, onError) => {
+    // Immediately stop any prior speech before starting new speech!
+    stopSpeaking();
+
+    // Assign new sequence ID to track this specific speech request
+    const seq = ++speechSequenceRef.current;
+
+    if (bhasiniAvailable) {
+      const ok = await speakViaBhasini(text, lang, seq);
+      if (ok) return;
+      if (seq !== speechSequenceRef.current) return;
+    }
+
+    if (seq === speechSequenceRef.current) {
+      speakViaWebSpeech(text, lang, seq);
+    }
+  }, [bhasiniAvailable, speakViaBhasini, speakViaWebSpeech, stopSpeaking]);
+
+  // ---- ASR ----------------------------------------------------------------
+  const startListening = useCallback((lang = 'English', onResult, onError) => {
     if (!isSupported.asr) {
       if (onError) onError(new Error('Speech recognition not supported in this browser'));
       return;
     }
-    if (recognitionRef.current) recognitionRef.current.abort();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch (_) {}
+    }
+
+    stopSpeaking();
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = LANGUAGE_CODES[lang] || lang;
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    const recognition       = new SpeechRecognition();
+    recognition.lang             = LANGUAGE_CODES[lang] || lang;
+    recognition.continuous       = false;
+    recognition.interimResults   = false;
+    recognition.maxAlternatives  = 1;
 
     recognition.onstart  = () => setIsListening(true);
     recognition.onend    = () => setIsListening(false);
     recognition.onerror  = (e) => {
       setIsListening(false);
-      if (onError) onError(new Error(e.error || 'Speech recognition error'));
+      console.warn('ASR event error:', e.error);
+      if (onError && e.error !== 'no-speech') onError(new Error(e.error || 'Speech recognition error'));
     };
     recognition.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript || '';
-      if (onResult) onResult(transcript);
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i]?.[0]?.transcript) {
+          transcript += event.results[i][0].transcript;
+        }
+      }
+      if (onResult && transcript.trim()) {
+        onResult(transcript.trim());
+      }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  }, [isSupported.asr]);
+    try {
+      recognition.start();
+    } catch (err) {
+      console.warn('SpeechRecognition start() error:', err);
+      setIsListening(false);
+      if (onError) onError(err);
+    }
+  }, [isSupported.asr, stopSpeaking]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
     }
     setIsListening(false);
   }, []);
 
-  return { speak, stopSpeaking, startListening, stopListening, isListening, isSpeaking, isSupported };
+  return {
+    speak, stopSpeaking, startListening, stopListening,
+    isListening, isSpeaking, isVoiceLoading, voiceLoadingText,
+    isSupported, bhasiniAvailable, voiceProvider,
+  };
 }

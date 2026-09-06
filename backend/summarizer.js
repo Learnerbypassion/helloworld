@@ -111,4 +111,99 @@ async function generateSummary(session, docs) {
   }
 }
 
-module.exports = { generateSummary };
+
+// -----------------------------------------------------------------------
+// AI-driven HPI follow-up question generation
+// -----------------------------------------------------------------------
+async function generateHpiQuestions(session) {
+  try {
+    const cc = session.chief_complaint || "General Consultation";
+    const transcript = session.transcript || "";
+    const mode = session.ayush_mode ? "Ayurvedic" : "Allopathic";
+    const prompt = `You are an expert Clinical Triage AI at a hospital OPD kiosk.
+The patient has reported the following symptom/condition:
+- Chief Complaint: ${cc}
+${transcript ? "- Spoken Voice Description / Details: " + transcript : ""}
+- Consultation Mode: ${mode}
+
+Analyze the patient's specific symptom or condition and select the 4 to 5 most clinically appropriate follow-up questions to ask this patient.
+Make the questions directly targeted to the patient's specific condition (e.g. if ear pain, ask about ear discharge/swimming; if skin rash, ask about itching/spreading; if joint pain, ask about swelling/morning stiffness; if eye problem, ask about vision blurriness/redness).
+Include:
+1. Duration / Onset question (e.g. "When did your [symptom] start?")
+2. Severity rating question (e.g. "On a scale of 0 to 10 or 1 to 10, how severe is the pain/discomfort?")
+3. 1 or 2 specific clinical feature questions tailored specifically to this symptom/disease.
+4. Relieving/aggravating factors or medication taken.
+
+Rules:
+- Questions must be plain-language, clear, and easy for a patient to answer.
+- Respond ONLY with a valid JSON array of question strings in English. No markdown, no explanation, just the JSON array.
+Example: ["When did the ear pain start?", "On a scale of 1-10, how severe is the pain?", "Do you notice any pus or fluid discharge from the ear?", "Have you taken any painkillers or ear drops?"]`;
+
+    const response = await axios.post(
+      `${OLLAMA_URL}/api/generate`,
+      { model: OLLAMA_MODEL, prompt, stream: false },
+      { timeout: 25000 }
+    );
+    const raw = response.data?.response?.trim() || "";
+    // Extract JSON array from the response
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) return defaultHpiQuestions(cc);
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed.filter(q => typeof q === "string" && q.length > 5) : defaultHpiQuestions(cc);
+  } catch (err) {
+    console.info("[summarizer] HPI questions generation skipped:", err.message?.slice(0, 60));
+    return defaultHpiQuestions(session.chief_complaint || "");
+  }
+}
+
+function defaultHpiQuestions(cc) {
+  return [
+    `How long have you been experiencing ${cc || "these symptoms"}?`,
+    "On a scale of 1-10, how severe is your discomfort?",
+    "Does anything make your symptoms better or worse?",
+    "Do you have any fever, nausea, or other associated symptoms?",
+    "Have you taken any medication for this? If yes, which one?",
+  ];
+}
+
+// -----------------------------------------------------------------------
+// AI doctor recommendation
+// -----------------------------------------------------------------------
+async function recommendDoctor(session, doctors) {
+  if (!doctors || doctors.length === 0) return null;
+  try {
+    const cc = session.chief_complaint || "General Consultation";
+    const mode = session.ayush_mode ? "AYUSH/Ayurvedic" : "Allopathic";
+    const doctorList = doctors.map((d, i) => `${i + 1}. ${d.name} — ${d.specialization || d.doctor_type || "General Medicine"}`).join("\n");
+    const prompt = `You are a clinical triage AI. Based on the patient's chief complaint, recommend the most suitable doctor.
+
+Chief Complaint: ${cc}
+Mode: ${mode}
+
+Available Doctors:
+${doctorList}
+
+Reply with ONLY valid JSON in this exact format (no explanation):
+{"doctor_index": 1, "rationale": "Brief one-sentence reason"}
+
+Use the 1-based index from the list above.`;
+
+    const response = await axios.post(
+      `${OLLAMA_URL}/api/generate`,
+      { model: OLLAMA_MODEL, prompt, stream: false },
+      { timeout: 15000 }
+    );
+    const raw = response.data?.response?.trim() || "";
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { doctor_id: doctors[0].id, rationale: "" };
+    const parsed = JSON.parse(match[0]);
+    const idx = (parsed.doctor_index || 1) - 1;
+    const chosen = doctors[Math.max(0, Math.min(idx, doctors.length - 1))];
+    return { doctor_id: chosen.id || chosen._id?.toString(), rationale: parsed.rationale || "" };
+  } catch (err) {
+    console.info("[summarizer] Doctor recommendation skipped:", err.message?.slice(0, 60));
+    return { doctor_id: doctors[0]?.id || doctors[0]?._id?.toString(), rationale: "" };
+  }
+}
+
+module.exports = { generateSummary, generateHpiQuestions, recommendDoctor };

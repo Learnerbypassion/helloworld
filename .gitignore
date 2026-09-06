@@ -29,6 +29,7 @@ backend/medikiosk.db*
 uploads/
 backend/uploads/*
 !backend/uploads/.gitkeep
+audio_cache/
 
 # OCR traineddata files
 *.traineddata
