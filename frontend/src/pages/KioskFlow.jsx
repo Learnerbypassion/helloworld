@@ -180,6 +180,86 @@ function AIThinkingLoader({ chiefComplaint }) {
   );
 }
 
+
+function getFullAyushSpeechText(q, lang) {
+  if (!q) return '';
+  const transQ = getAyushQuestionTrans(q, lang);
+  if (!q.options || q.options.length === 0) return transQ;
+
+  const translatedOptions = q.options.map(opt => getAyushOptionTrans(q.field, opt, lang));
+
+  // Regional option prefixes for all supported Indic languages + English
+  const prefixMap = {
+    Bengali:   (i, o) => `বিকল্প ${i + 1}: ${o}`,
+    Hindi:     (i, o) => `विकल्प ${i + 1}: ${o}`,
+    Tamil:     (i, o) => `விருப்பம் ${i + 1}: ${o}`,
+    Telugu:    (i, o) => `ఎంపిక ${i + 1}: ${o}`,
+    Marathi:   (i, o) => `पर्याय ${i + 1}: ${o}`,
+    Gujarati:  (i, o) => `વિકલ્પ ${i + 1}: ${o}`,
+    Kannada:   (i, o) => `ಆಯ್ಕೆ ${i + 1}: ${o}`,
+    Malayalam: (i, o) => `ഓപ്ഷൻ ${i + 1}: ${o}`,
+    Odia:      (i, o) => `ବିକଳ୍ପ ${i + 1}: ${o}`,
+    Punjabi:   (i, o) => `ਵਿਕਲਪ ${i + 1}: ${o}`,
+  };
+
+  const formatter = prefixMap[lang] || ((i, o) => `Option ${i + 1}: ${o}`);
+  const delimiter = ['Bengali', 'Hindi', 'Marathi'].includes(lang) ? '। ' : '. ';
+  const endChar   = ['Bengali', 'Hindi', 'Marathi'].includes(lang) ? '।' : '.';
+
+  const opts = translatedOptions.map((opt, i) => formatter(i, opt)).join(delimiter);
+  return `${transQ}${delimiter}${opts}${endChar}`;
+}
+
+function getFullHpiSpeechText(qItem, lang) {
+  if (!qItem) return '';
+  const qTrans = getQTrans(qItem);
+  const qEng = getQEng(qItem);
+
+  let isScale = qItem?.type === 'scale';
+  let labels = [];
+
+  if (qItem.options && Array.isArray(qItem.options) && qItem.options.length > 0) {
+    labels = qItem.options.map(o => typeof o === 'string' ? o : o.label || o.text || o.value || '');
+  } else {
+    // Dynamically infer interactive choices from question text (e.g. fever duration, pain scale, yes/no)
+    const qConfig = getQuestionOptions(qTrans, lang, qEng);
+    if (qConfig?.type === 'scale') {
+      isScale = true;
+    } else if (qConfig?.options && Array.isArray(qConfig.options)) {
+      labels = qConfig.options.map(o => typeof o === 'string' ? o : o.label || o.text || o.value || '');
+    }
+  }
+
+  if (isScale) {
+    if (lang === 'Bengali') return `${qTrans}। অনুগ্রহ করে ১ থেকে ১০ এর স্কেলে তীব্রতা জানান।`;
+    if (lang === 'Hindi') return `${qTrans}। कृपया १ से १० के पैमाने पर अपनी स्थिति बताइए।`;
+    return `${qTrans}. Please rate on a scale from 1 to 10.`;
+  }
+
+  labels = labels.filter(Boolean);
+  if (labels.length === 0) return qTrans;
+
+  const prefixMap = {
+    Bengali:   (i, o) => `বিকল্প ${i + 1}: ${o}`,
+    Hindi:     (i, o) => `विकल्प ${i + 1}: ${o}`,
+    Tamil:     (i, o) => `விருப்பம் ${i + 1}: ${o}`,
+    Telugu:    (i, o) => `ఎంపిక ${i + 1}: ${o}`,
+    Marathi:   (i, o) => `पर्याय ${i + 1}: ${o}`,
+    Gujarati:  (i, o) => `વિકલ્પ ${i + 1}: ${o}`,
+    Kannada:   (i, o) => `ಆಯ್ಕೆ ${i + 1}: ${o}`,
+    Malayalam: (i, o) => `ഓപ്ഷൻ ${i + 1}: ${o}`,
+    Odia:      (i, o) => `ବିକଳ୍ପ ${i + 1}: ${o}`,
+    Punjabi:   (i, o) => `ਵਿਕਲਪ ${i + 1}: ${o}`,
+  };
+
+  const formatter = prefixMap[lang] || ((i, o) => `Option ${i + 1}: ${o}`);
+  const delimiter = ['Bengali', 'Hindi', 'Marathi'].includes(lang) ? '। ' : '. ';
+  const endChar   = ['Bengali', 'Hindi', 'Marathi'].includes(lang) ? '।' : '.';
+
+  const optsText = labels.map((l, i) => formatter(i, l)).join(delimiter);
+  return `${qTrans}${delimiter}${optsText}${endChar}`;
+}
+
 export default function KioskFlow() {
   // Localization helper
   const t = (key, ...args) => getTranslation(key, selectedLanguage, ...args);
@@ -276,6 +356,27 @@ export default function KioskFlow() {
     if (intakeData.mode === 'AYUSH' && ayushQuestions.length === 0)
       api.getAyushQuestions().then(q => setAyushQuestions(q)).catch(() => {});
   }, [intakeData.mode]);
+
+  // Auto-speak AYUSH Dashavidha Question + All Options
+  useEffect(() => {
+    if (step === 4.5 && audioEnabled && ayushQuestions[ayushSubStep]) {
+      const q = ayushQuestions[ayushSubStep];
+      const speechText = getFullAyushSpeechText(q, selectedLanguage);
+      const t = setTimeout(() => speak(speechText, selectedLanguage), 350);
+      return () => clearTimeout(t);
+    }
+  }, [step, ayushSubStep, audioEnabled, selectedLanguage, ayushQuestions]);
+
+  // Auto-speak HPI Question + Options (if any)
+  useEffect(() => {
+    if (step === 4 && audioEnabled && hpiQuestions[hpiSubStep]) {
+      const qItem = hpiQuestions[hpiSubStep];
+      const speechText = getFullHpiSpeechText(qItem, selectedLanguage);
+      const t = setTimeout(() => speak(speechText, selectedLanguage), 350);
+      return () => clearTimeout(t);
+    }
+  }, [step, hpiSubStep, audioEnabled, selectedLanguage, hpiQuestions]);
+
 
   useEffect(() => {
     api.getDoctors({ hospital_id: kioskHospitalId }).then(d => {
@@ -387,15 +488,29 @@ export default function KioskFlow() {
       transcript => {
         if (!transcript) return;
         const cleanText = transcript.trim();
-        // Match against options in English or translated language
+        const lower = cleanText.toLowerCase();
+
+        // 1. Ordinal and numeric recognition in Bengali, Hindi, and English
+        let matchedIdx = -1;
+        if (/^(১|এক|প্রথম|প্রথমটা|1|one|first|पहला|एक)/i.test(lower)) matchedIdx = 0;
+        else if (/^(২|দুই|দ্বিতীয়|দ্বিতীয়টা|2|two|second|दूसरा|दो)/i.test(lower)) matchedIdx = 1;
+        else if (/^(৩|তিন|তৃতীয়|তৃতীয়টা|3|three|third|तीसरा|तीन)/i.test(lower)) matchedIdx = 2;
+        else if (/^(৪|চার|চতুর্থ|৪র্থ|4|four|fourth|चौथा|चार)/i.test(lower)) matchedIdx = 3;
+
+        if (matchedIdx >= 0 && currentQ.options[matchedIdx]) {
+          handleAyushAnswer(currentQ.field, currentQ.options[matchedIdx]);
+          return;
+        }
+
+        // 2. Direct keyword / phrase match against options
         let matchedOption = null;
         for (const opt of currentQ.options) {
           const transOpt = getAyushOptionTrans(currentQ.field, opt, selectedLanguage);
           if (
-            cleanText.toLowerCase().includes(opt.toLowerCase()) ||
-            cleanText.toLowerCase().includes(transOpt.toLowerCase()) ||
-            opt.toLowerCase().includes(cleanText.toLowerCase()) ||
-            transOpt.toLowerCase().includes(cleanText.toLowerCase())
+            lower.includes(opt.toLowerCase()) ||
+            lower.includes(transOpt.toLowerCase()) ||
+            opt.toLowerCase().includes(lower) ||
+            transOpt.toLowerCase().includes(lower)
           ) {
             matchedOption = opt;
             break;
@@ -413,14 +528,62 @@ export default function KioskFlow() {
     stopSpeaking();
     const currentItem = hpiQuestions[hpiSubStep];
     if (!currentItem) return;
-    const qKey = getQEng(currentItem);
+    const qKey = getQEng(currentItem) || getQTrans(currentItem);
+    const transQ = getQTrans(currentItem);
+    const engQ = getQEng(currentItem);
+
+    // Resolve interactive options for recognition
+    const qConfig = (currentItem?.type === 'scale')
+      ? { type: 'scale', options: [1,2,3,4,5,6,7,8,9,10].map(n => ({ label: String(n), value: String(n) })) }
+      : (currentItem?.options && currentItem.options.length > 0)
+        ? { type: 'chips', options: currentItem.options.map(o => typeof o === 'string' ? { label: o, value: o } : o) }
+        : getQuestionOptions(transQ, selectedLanguage, engQ);
+
     startListening(
       selectedLanguage,
       transcript => {
         if (!transcript) return;
+        const cleanText = transcript.trim();
+        const lower = cleanText.toLowerCase();
+
+        // 1. Ordinal and numeric recognition (e.g. Option 1, Option 2, 1, 2, first, second, এক, দুই, প্রথম, دوسرا, etc.)
+        let matchedIdx = -1;
+        if (/^(১|এক|প্রথম|প্রথমটা|option 1|option one|one|first|पहला|एक)/i.test(lower)) matchedIdx = 0;
+        else if (/^(২|দুই|দ্বিতীয়|দ্বিতীয়টা|option 2|option two|two|second|दूसरा|दो)/i.test(lower)) matchedIdx = 1;
+        else if (/^(৩|তিন|তৃতীয়|তৃতীয়টা|option 3|option three|three|third|तीसरा|तीन)/i.test(lower)) matchedIdx = 2;
+        else if (/^(৪|চার|চতুর্থ|৪র্থ|option 4|option four|four|fourth|चौथा|चार)/i.test(lower)) matchedIdx = 3;
+        else if (/^(৫|পাঁচ|পঞ্চম|৫ম|option 5|option five|five|fifth|पांचवां|पाँच)/i.test(lower)) matchedIdx = 4;
+        else if (/^(৬|ছয়|ছয়|option 6|six|sixth|छठा)/i.test(lower)) matchedIdx = 5;
+        else if (/^(৭|সাত|option 7|seven|seventh|सातवां)/i.test(lower)) matchedIdx = 6;
+        else if (/^(৮|আট|option 8|eight|eighth|आठवां)/i.test(lower)) matchedIdx = 7;
+        else if (/^(৯|নয়|নয়|option 9|nine|ninth|नौवां)/i.test(lower)) matchedIdx = 8;
+        else if (/^(১০|দশ|option 10|ten|tenth|दसवां)/i.test(lower)) matchedIdx = 9;
+
+        if (matchedIdx >= 0 && qConfig?.options?.[matchedIdx]) {
+          const selectedOpt = qConfig.options[matchedIdx];
+          const val = selectedOpt.value || selectedOpt.label || String(selectedOpt);
+          const newAnswers = { ...hpiAnswers, [qKey]: val };
+          setHpiAnswers(newAnswers);
+          const hpiText = Object.entries(newAnswers).map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n\n');
+          setIntakeData(p => ({ ...p, hpi: hpiText }));
+          return;
+        }
+
+        // 2. Direct keyword / phrase match against available option labels
+        let matchedOption = null;
+        if (qConfig?.options && Array.isArray(qConfig.options)) {
+          for (const opt of qConfig.options) {
+            const optLabel = (opt.label || opt.value || (typeof opt === 'string' ? opt : '')).toLowerCase();
+            if (optLabel && (lower.includes(optLabel) || optLabel.includes(lower))) {
+              matchedOption = opt.value || opt.label;
+              break;
+            }
+          }
+        }
+
+        const finalVal = matchedOption || cleanText;
         setHpiAnswers(prev => {
-          const existing = prev[qKey] ? `${prev[qKey]} ` : '';
-          const updatedVal = existing + transcript.trim();
+          const updatedVal = matchedOption ? finalVal : (prev[qKey] ? `${prev[qKey]} ${finalVal}` : finalVal);
           const newAnswers = { ...prev, [qKey]: updatedVal };
           const hpiText = Object.entries(newAnswers).map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n\n');
           setIntakeData(p => ({ ...p, hpi: hpiText }));
@@ -488,7 +651,8 @@ export default function KioskFlow() {
           }
           setHpiQuestions(items);
           if (audioEnabled && items[0]) {
-            setTimeout(() => speak(items[0].translated, selectedLanguage), 400);
+            const spText = getFullHpiSpeechText(items[0], selectedLanguage);
+            setTimeout(() => speak(spText, selectedLanguage), 400);
           }
           return;
         }
@@ -511,7 +675,8 @@ export default function KioskFlow() {
       }
       setHpiQuestions(items);
       if (audioEnabled && items[0]) {
-        setTimeout(() => speak(items[0].translated, selectedLanguage), 400);
+        const spText = getFullHpiSpeechText(items[0], selectedLanguage);
+        setTimeout(() => speak(spText, selectedLanguage), 400);
       }
     } catch {
       const defaultEng = [
@@ -540,7 +705,10 @@ export default function KioskFlow() {
     if (hpiSubStep < hpiQuestions.length - 1) {
       setHpiSubStep(s => s + 1);
       const nextItem = hpiQuestions[hpiSubStep + 1];
-      if (audioEnabled && nextItem) setTimeout(() => speak(getQTrans(nextItem), selectedLanguage), 300);
+      if (audioEnabled && nextItem) {
+        const spText = getFullHpiSpeechText(nextItem, selectedLanguage);
+        setTimeout(() => speak(spText, selectedLanguage), 300);
+      }
     } else {
       // Completed all questions -> move to next step!
       setStep(intakeData.mode === "AYUSH" ? 4.5 : 5);
@@ -976,15 +1144,32 @@ export default function KioskFlow() {
                       <div className="flex space-x-1">{hpiQuestions.map((_, i) => <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < hpiSubStep ? 'bg-brand-600' : i === hpiSubStep ? 'bg-brand-400' : 'bg-gray-200'}`} />)}</div>
                     </div>
                     {/* Bilingual Question Box: Shows English first when non-English is selected */}
-                    <div className="bg-brand-50 border border-brand-200 rounded-xl p-5 shadow-sm">
-                      {selectedLanguage !== "English" && getQEng(hpiQuestions[hpiSubStep]) && (
-                        <p className="text-sm font-bold text-brand-700 mb-2 pb-1.5 border-b border-brand-200/80 tracking-wide uppercase">
-                          {getQEng(hpiQuestions[hpiSubStep])}
-                        </p>
-                      )}
-                      <p className="text-xl font-bold text-gray-900 leading-relaxed">
-                        {getQTrans(hpiQuestions[hpiSubStep])}
-                      </p>
+                    <div className="bg-gradient-to-r from-brand-50 to-blue-50/50 border border-brand-200 rounded-xl p-5 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          {selectedLanguage !== "English" && getQEng(hpiQuestions[hpiSubStep]) && (
+                            <p className="text-sm font-bold text-brand-700 mb-2 pb-1.5 border-b border-brand-200/80 tracking-wide uppercase">
+                              {getQEng(hpiQuestions[hpiSubStep])}
+                            </p>
+                          )}
+                          <p className="text-xl font-bold text-gray-900 leading-relaxed">
+                            {getQTrans(hpiQuestions[hpiSubStep])}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          title="Read Question and Options Aloud"
+                          onClick={() => {
+                            const currentItem = hpiQuestions[hpiSubStep];
+                            const spText = getFullHpiSpeechText(currentItem, selectedLanguage);
+                            speak(spText, selectedLanguage);
+                          }}
+                          className="shrink-0 px-3 py-2 rounded-xl bg-white border border-brand-300 text-brand-700 hover:bg-brand-100 active:scale-95 shadow-sm transition-all flex items-center gap-1.5 text-xs font-semibold"
+                        >
+                          <Volume2 className="w-4 h-4 text-brand-600 animate-pulse" />
+                          <span>Listen Options</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Interactive Question Options / Rating Scale */}

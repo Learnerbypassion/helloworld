@@ -59,7 +59,7 @@ router.post("/hospital/login", async (req, res) => {
 // ---------- Doctor Management ----------
 router.post("/doctors", requireAuth, requireRole("hospital_admin"), async (req, res) => {
   try {
-    const { name, phone, license, education, specialization, hpr_id, aadhar_id, dob, address, doctor_type, email, password } = req.body;
+    const { name, phone, license, education, specialization, medical_stream, hpr_id, aadhar_id, dob, address, doctor_type, email, password } = req.body;
     if (!name) {
       return res.status(400).json({ error: "Doctor name is required" });
     }
@@ -84,6 +84,7 @@ router.post("/doctors", requireAuth, requireRole("hospital_admin"), async (req, 
         license: license || docHpr,
         education: education || null,
         specialization: specialization || docType,
+        medical_stream: medical_stream || (doctor_type === "AYUSH" ? "AYUSH" : "Allopathy"),
         hpr_id: docHpr,
         aadhar_id: aadhar_id || null,
         dob: dob || null,
@@ -104,6 +105,7 @@ router.post("/doctors", requireAuth, requireRole("hospital_admin"), async (req, 
       license: license || docHpr,
       education: education || null,
       specialization: specialization || docType,
+      medical_stream: medical_stream || (doctor_type === "AYUSH" ? "AYUSH" : "Allopathy"),
       hpr_id: docHpr,
       aadhar_id: aadhar_id || null,
       dob: dob || null,

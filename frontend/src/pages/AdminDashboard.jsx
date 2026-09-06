@@ -8,6 +8,59 @@ import { useGlobal } from '../context/GlobalContext';
 import { getStoredUser } from '../services/api';
 import { api } from '../services/api';
 
+
+const ALLOPATHY_SPECIALIZATIONS = [
+  "General Medicine",
+  "Cardiology",
+  "Pediatrics",
+  "Orthopedics",
+  "Dermatology",
+  "Obstetrics & Gynecology",
+  "Neurology",
+  "General Surgery",
+  "ENT (Otolaryngology)",
+  "Ophthalmology",
+  "Psychiatry",
+  "Pulmonology / Chest Medicine",
+  "Gastroenterology",
+  "Endocrinology & Diabetes",
+  "Nephrology",
+  "Emergency Medicine",
+  "Other (Specify)"
+];
+
+const AYUSH_SPECIALIZATIONS = [
+  "Ayurveda - Kayachikitsa (Internal Medicine)",
+  "Ayurveda - Panchakarma",
+  "Ayurveda - Shalya Tantra (Surgery)",
+  "Ayurveda - Shalakya Tantra (ENT & Eye)",
+  "Ayurveda - Kaumarbhritya (Pediatrics)",
+  "Ayurveda - Prasuti Tantra (Gynecology & Obstetrics)",
+  "Homeopathy - General Practice",
+  "Unani Medicine",
+  "Siddha Medicine",
+  "Naturopathy & Yoga",
+  "Other (Specify)"
+];
+
+const EDUCATION_OPTIONS = [
+  "MBBS",
+  "MBBS, MD (General Medicine)",
+  "MBBS, MS (General Surgery)",
+  "MBBS, DNB",
+  "MBBS, DCH (Pediatrics)",
+  "MBBS, DGO (Gynecology)",
+  "DM / MCh (Super Speciality)",
+  "BAMS (Bachelor of Ayurvedic Medicine & Surgery)",
+  "BAMS, MD (Ayurveda)",
+  "BHMS (Bachelor of Homeopathic Medicine & Surgery)",
+  "BUMS (Bachelor of Unani Medicine & Surgery)",
+  "BSMS (Bachelor of Siddha Medicine & Surgery)",
+  "BNYS (Naturopathy & Yogic Sciences)",
+  "BDS / MDS (Dental)",
+  "Other (Specify)"
+];
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { doctors, receptionists, addDoctor, deleteDoctor, addReceptionist, deleteReceptionist, logout } = useGlobal();
@@ -44,8 +97,11 @@ export default function AdminDashboard() {
     phone: '', 
     email: '', 
     license: '', 
-    education: '', 
-    specialization: '', 
+    medical_stream: 'Allopathy', // 'Allopathy' | 'AYUSH'
+    specializationSelect: 'General Medicine',
+    specializationCustom: '',
+    educationSelect: 'MBBS',
+    educationCustom: '',
     password: 'Doctor@123' 
   });
   
@@ -61,15 +117,38 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     setSuccessMsg('');
     try {
-      const res = await addDoctor(docForm);
+      const finalSpecialization = docForm.specializationSelect === 'Other (Specify)' 
+        ? (docForm.specializationCustom.trim() || 'General Medicine')
+        : docForm.specializationSelect;
+
+      const finalEducation = docForm.educationSelect === 'Other (Specify)'
+        ? (docForm.educationCustom.trim() || 'MBBS')
+        : docForm.educationSelect;
+
+      const payload = {
+        name: docForm.name,
+        phone: docForm.phone,
+        email: docForm.email,
+        license: docForm.license,
+        medical_stream: docForm.medical_stream,
+        specialization: finalSpecialization,
+        education: finalEducation,
+        doctor_type: docForm.medical_stream === 'AYUSH' ? 'AYUSH' : 'General Medicine',
+        password: docForm.password || 'Doctor@123'
+      };
+
+      const res = await addDoctor(payload);
       setSuccessMsg(`Doctor ${docForm.name} registered successfully! Login Password: ${docForm.password || 'Doctor@123'}`);
       setDocForm({ 
         name: '', 
         phone: '', 
         email: '', 
         license: '', 
-        education: '', 
-        specialization: '', 
+        medical_stream: 'Allopathy',
+        specializationSelect: 'General Medicine',
+        specializationCustom: '',
+        educationSelect: 'MBBS',
+        educationCustom: '',
         password: 'Doctor@123' 
       });
       setTimeout(() => setSuccessMsg(''), 8000);
@@ -231,6 +310,56 @@ export default function AdminDashboard() {
               </div>
 
               <form onSubmit={handleAddDoctor} className="space-y-4">
+                {/* System / Stream Selector: Allopathy vs AYUSH */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                    Medical System / Practice Stream *
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    <label className={`flex items-center space-x-2.5 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      docForm.medical_stream === 'Allopathy' 
+                        ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold shadow-2xs' 
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}>
+                      <input 
+                        type="radio" 
+                        name="medical_stream" 
+                        value="Allopathy" 
+                        checked={docForm.medical_stream === 'Allopathy'} 
+                        onChange={() => setDocForm(p => ({ 
+                          ...p, 
+                          medical_stream: 'Allopathy',
+                          specializationSelect: 'General Medicine',
+                          educationSelect: 'MBBS'
+                        }))}
+                        className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                      />
+                      <span>🏥 Allopathy (Modern Medicine)</span>
+                    </label>
+
+                    <label className={`flex items-center space-x-2.5 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      docForm.medical_stream === 'AYUSH' 
+                        ? 'border-emerald-600 bg-emerald-50/80 text-emerald-950 font-bold shadow-2xs' 
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}>
+                      <input 
+                        type="radio" 
+                        name="medical_stream" 
+                        value="AYUSH" 
+                        checked={docForm.medical_stream === 'AYUSH'} 
+                        onChange={() => setDocForm(p => ({ 
+                          ...p, 
+                          medical_stream: 'AYUSH',
+                          specializationSelect: 'Ayurveda - Kayachikitsa (Internal Medicine)',
+                          educationSelect: 'BAMS (Bachelor of Ayurvedic Medicine & Surgery)'
+                        }))}
+                        className="text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                      />
+                      <span>🌿 AYUSH (Ayurveda, Homeopathy, Unani, Siddha)</span>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Doctor Full Name *</label>
@@ -267,38 +396,67 @@ export default function AdminDashboard() {
                     />
                   </div>
 
+                  {/* Specialization Dropdown + Other write-in */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Specialization *</label>
-                    <input 
-                      required 
-                      type="text" 
-                      placeholder="e.g. Cardiology / General Medicine" 
-                      value={docForm.specialization} 
-                      onChange={e=>setDocForm({...docForm, specialization: e.target.value})} 
-                      className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" 
-                    />
+                    <select 
+                      required
+                      value={docForm.specializationSelect}
+                      onChange={e=>setDocForm({...docForm, specializationSelect: e.target.value})}
+                      className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white"
+                    >
+                      {(docForm.medical_stream === 'AYUSH' ? AYUSH_SPECIALIZATIONS : ALLOPATHY_SPECIALIZATIONS).map(spec => (
+                        <option key={spec} value={spec}>{spec}</option>
+                      ))}
+                    </select>
+
+                    {docForm.specializationSelect === 'Other (Specify)' && (
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Specify Custom Specialization *" 
+                        value={docForm.specializationCustom} 
+                        onChange={e=>setDocForm({...docForm, specializationCustom: e.target.value})} 
+                        className="w-full mt-2 p-2 border border-brand-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 bg-brand-50/20" 
+                      />
+                    )}
                   </div>
 
+                  {/* Medical License */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Medical License / HPR ID</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. MCI-123456" 
+                      placeholder="e.g. MCI-123456 / HPR-IND-902" 
                       value={docForm.license} 
                       onChange={e=>setDocForm({...docForm, license: e.target.value})} 
                       className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" 
                     />
                   </div>
 
+                  {/* Education Dropdown + Other write-in */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Education</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. MBBS, MD (Medicine)" 
-                      value={docForm.education} 
-                      onChange={e=>setDocForm({...docForm, education: e.target.value})} 
-                      className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" 
-                    />
+                    <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Education / Degree</label>
+                    <select 
+                      value={docForm.educationSelect}
+                      onChange={e=>setDocForm({...docForm, educationSelect: e.target.value})}
+                      className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white"
+                    >
+                      {EDUCATION_OPTIONS.map(edu => (
+                        <option key={edu} value={edu}>{edu}</option>
+                      ))}
+                    </select>
+
+                    {docForm.educationSelect === 'Other (Specify)' && (
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Specify Custom Degree / Education *" 
+                        value={docForm.educationCustom} 
+                        onChange={e=>setDocForm({...docForm, educationCustom: e.target.value})} 
+                        className="w-full mt-2 p-2 border border-brand-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 bg-brand-50/20" 
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -375,9 +533,18 @@ export default function AdminDashboard() {
                           <div className="text-xs text-gray-500">{doc.education || 'MBBS'}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700 mb-1">
-                            {doc.specialization}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              doc.medical_stream === 'AYUSH' || /ayur|panch|unani|homeo/i.test(doc.specialization)
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                            }`}>
+                              {doc.medical_stream === 'AYUSH' || /ayur|panch|unani|homeo/i.test(doc.specialization) ? '🌿 AYUSH' : '🏥 Allopathy'}
+                            </span>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">
+                              {doc.specialization}
+                            </span>
+                          </div>
                           <div className="text-xs text-gray-500 font-mono">{doc.license || 'License on file'}</div>
                         </td>
                         <td className="px-6 py-4">

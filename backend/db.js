@@ -56,6 +56,7 @@ const DoctorSchema = new mongoose.Schema(
     license: { type: String },
     education: { type: String },
     specialization: { type: String, default: "General Medicine" },
+    medical_stream: { type: String, default: "Allopathy" },
     hpr_id: { type: String },
     aadhar_id: { type: String },
     dob: { type: String },

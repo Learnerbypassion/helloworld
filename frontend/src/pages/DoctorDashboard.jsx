@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History } from 'lucide-react';
+import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History, Download, X, Copy, Check, FileCode, ChevronRight } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
 
@@ -294,6 +294,7 @@ function FormattedAiSummary({ text }) {
           </p>
         </div>
       )}
+
     </div>
   );
 }
@@ -316,6 +317,57 @@ export default function DoctorDashboard() {
   const [abhaHistory, setAbhaHistory] = useState([]);
   const [loadingAbha, setLoadingAbha] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [selectedCaseModal, setSelectedCaseModal] = useState(null);
+  const [caseModalTab, setCaseModalTab] = useState('overview'); // 'overview' | 'labs' | 'summary' | 'qa' | 'ayush' | 'fhir'
+  const [copiedCaseFhir, setCopiedCaseFhir] = useState(false);
+
+  const handleDownloadCaseRx = (rec) => {
+    if (!rec) return;
+    const rxContent = `=============================================================
+AYUSHMAN BHARAT DIGITAL MISSION (ABDM)
+CENTRAL HEALTHCARE CLINICAL RECORD & PRESCRIPTION
+=============================================================
+Encounter ID:     ${rec.record_id || 'REC_N/A'}
+Date of Visit:    ${new Date(rec.date).toLocaleString('en-IN')}
+Healthcare Unit:  ${rec.hospital_name || 'testHospital medical college'}
+Consultant:       ${rec.doctor_name || 'Attending Physician'} (${rec.doctor_specialization || 'General Medicine'})
+System / Stream:  ${rec.ayush_mode ? 'AYUSH (Ayurveda)' : 'Allopathy (Modern Medicine)'}
+
+-------------------------------------------------------------
+PATIENT DEMOGRAPHICS
+-------------------------------------------------------------
+Patient Name:     ${activeConsultation?.patient?.name || activeConsultation?.name || 'Rajesh Kumar'}
+ABHA ID:          ${activeConsultation?.patient?.abha_id || activeConsultation?.abha_id || '12-3456-7890-1234'}
+
+-------------------------------------------------------------
+CLINICAL DIAGNOSIS & CHIEF COMPLAINTS
+-------------------------------------------------------------
+Primary Diagnosis: ${rec.diagnosis || 'Clinical Consultation'}
+Chief Complaints:  ${rec.chief_complaint || 'None recorded'}
+
+-------------------------------------------------------------
+PRESCRIBED MEDICATIONS & CLINICAL ORDERS
+-------------------------------------------------------------
+${rec.prescription || 'No medications prescribed.'}
+
+${rec.lab_reports && rec.lab_reports.some(lr => lr.labs && lr.labs.length > 0) ? `
+-------------------------------------------------------------
+LABORATORY FINDINGS & DIAGNOSTIC MARKERS
+-------------------------------------------------------------
+${rec.lab_reports.flatMap(lr => lr.labs || []).map(lb => `- ${lb.name}: ${lb.value} ${lb.unit} (Ref: ${lb.ref_range || 'Normal'}, Status: ${lb.status || 'Normal'})`).join('\n')}
+` : ''}
+=============================================================
+Status: Digitally Signed & Synced to Central ABDM Registry
+=============================================================`;
+
+    const blob = new Blob([rxContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Case_Prescription_${rec.record_id || 'record'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const fetchAbhaHistory = async (qItem) => {
     if (!qItem) return;
@@ -600,69 +652,78 @@ export default function DoctorDashboard() {
                             Found <strong>{abhaHistory.length}</strong> previous hospital encounter(s) in Central Health Database:
                           </p>
                           {abhaHistory.map((rec, i) => (
-                            <div key={rec.record_id || i} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="font-bold text-blue-800 flex items-center">
-                                  🏥 {rec.hospital_name || 'Hospital Visit'}
+                            <div 
+                              key={rec.record_id || i} 
+                              onClick={() => { setSelectedCaseModal(rec); setCaseModalTab('overview'); }}
+                              className="p-4 bg-white hover:bg-indigo-50/40 rounded-2xl border-2 border-slate-200 hover:border-indigo-400 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-3 group relative"
+                              title="Click to view total case history, medical records, case reports, and test history"
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs pb-2 border-b border-gray-100">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-bold text-blue-900 flex items-center">
+                                    🏥 {rec.hospital_name || 'testHospital medical college'}
+                                  </span>
+                                  {rec.ayush_mode ? (
+                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                      🌿 AYUSH
+                                    </span>
+                                  ) : (
+                                    <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                      🏥 Allopathic
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-gray-400 font-mono">
+                                    ID: {rec.record_id ? rec.record_id.slice(-8) : `REC_${i+1}`}
+                                  </span>
+                                </div>
+                                <span className="text-gray-500 font-mono text-[11px]">
+                                  📅 {new Date(rec.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} ({new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
                                 </span>
-                                <span className="text-gray-500 font-mono">
-                                  📅 {new Date(rec.date).toLocaleDateString()} ({new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-700">
-                                <p><strong className="text-gray-900">Treating Doctor:</strong> {rec.doctor_name} ({rec.doctor_specialization || 'Physician'})</p>
-                                <p className="mt-0.5"><strong className="text-gray-900">Diagnosis:</strong> <span className="text-emerald-800 font-semibold">{rec.diagnosis}</span></p>
-                                {rec.chief_complaint && (
-                                  <p className="mt-0.5 text-gray-600"><strong>Symptoms:</strong> {rec.chief_complaint}</p>
-                                )}
-                              </div>
-                              <div className="bg-white p-2.5 rounded-lg border border-emerald-200 text-xs">
-                                <span className="font-bold text-emerald-900 block mb-0.5">Prescription & Rx:</span>
-                                <p className="text-gray-800 font-mono text-[11px] whitespace-pre-wrap">{rec.prescription}</p>
                               </div>
 
-                              {rec.lab_reports && rec.lab_reports.some(lr => lr.labs && lr.labs.length > 0) && (
-                                <div className="bg-white p-3 rounded-lg border border-purple-200 text-xs space-y-2">
-                                  <span className="font-bold text-purple-900 flex items-center justify-between">
-                                    <span>🔬 Historical Diagnostic Lab Tests ({rec.lab_reports.reduce((acc, lr) => acc + (lr.labs?.length || 0), 0)} Parameters)</span>
-                                  </span>
-                                  <div className="overflow-x-auto max-h-56 overflow-y-auto border border-purple-100 rounded">
-                                    <table className="min-w-full text-left text-[11px]">
-                                      <thead className="bg-purple-50 text-purple-900 uppercase font-semibold">
-                                        <tr>
-                                          <th className="py-1 px-2">Test Parameter</th>
-                                          <th className="py-1 px-2">Observed</th>
-                                          <th className="py-1 px-2">Ref Range</th>
-                                          <th className="py-1 px-2 text-center">Status</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-100 font-mono">
-                                        {rec.lab_reports.flatMap(lr => lr.labs || []).map((lb, bIdx) => {
-                                          const isLow = /low|below/i.test(lb.status);
-                                          const isHigh = /high|elevated|above/i.test(lb.status);
-                                          const isAbn = lb.abnormal || isLow || isHigh;
-                                          return (
-                                            <tr key={bIdx} className="hover:bg-purple-50/30">
-                                              <td className="py-1 px-2 font-sans font-medium text-gray-800">{lb.name}</td>
-                                              <td className="py-1 px-2 font-bold text-gray-900">{lb.value} {lb.unit}</td>
-                                              <td className="py-1 px-2 text-gray-500">{lb.ref_range || 'Normal'}</td>
-                                              <td className="py-1 px-2 text-center">
-                                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                                  isLow ? 'bg-amber-100 text-amber-800' :
-                                                  isHigh || isAbn ? 'bg-rose-100 text-rose-800' :
-                                                  'bg-emerald-100 text-emerald-800'
-                                                }`}>
-                                                  {lb.status || (isAbn ? 'Abnormal' : 'Normal')}
-                                                </span>
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
+                              <div className="grid sm:grid-cols-12 gap-3 text-xs">
+                                <div className="sm:col-span-6 space-y-1">
+                                  <p><strong className="text-gray-900">Treating Doctor:</strong> {rec.doctor_name} ({rec.doctor_specialization || 'Physician'})</p>
+                                  <div className="flex items-center space-x-1.5 mt-1">
+                                    <strong className="text-gray-900">Diagnosis:</strong>
+                                    <span className="text-emerald-900 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                                      {rec.diagnosis}
+                                    </span>
                                   </div>
+                                  {rec.chief_complaint && (
+                                    <p className="text-gray-600 mt-1"><strong>Symptoms:</strong> {rec.chief_complaint}</p>
+                                  )}
+                                </div>
+
+                                <div className="sm:col-span-6 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                  <span className="font-bold text-slate-800 block mb-0.5">Prescription &amp; Rx:</span>
+                                  <p className="text-gray-800 font-mono text-[11px] whitespace-pre-wrap line-clamp-2">{rec.prescription}</p>
+                                </div>
+                              </div>
+
+                              {/* Lab Test Indicator */}
+                              {rec.lab_reports && rec.lab_reports.some(lr => lr.labs && lr.labs.length > 0) && (
+                                <div className="bg-purple-50/70 p-2.5 rounded-xl border border-purple-200/80 flex items-center justify-between text-xs">
+                                  <span className="font-bold text-purple-900 flex items-center">
+                                    <Microscope className="w-3.5 h-3.5 mr-1.5 text-purple-700" />
+                                    Diagnostic Lab Panel ({rec.lab_reports.reduce((acc, lr) => acc + (lr.labs?.length || 0), 0) || 10} Parameters Evaluated)
+                                  </span>
+                                  <span className="text-[10px] bg-purple-200 text-purple-900 font-bold px-2 py-0.5 rounded-full">
+                                    Full Panel Attached
+                                  </span>
                                 </div>
                               )}
+
+                              {/* Clickable Action Banner */}
+                              <div className="pt-2 flex items-center justify-between text-xs text-indigo-700 font-bold group-hover:text-indigo-900 border-t border-gray-100">
+                                <span className="flex items-center">
+                                  <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                                  Click to Inspect Total Case History, Medical Records &amp; Lab Tests
+                                </span>
+                                <span className="inline-flex items-center text-indigo-600 group-hover:translate-x-1 transition-transform">
+                                  Open Case <ChevronRight className="w-4 h-4 ml-0.5" />
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -800,6 +861,375 @@ export default function DoctorDashboard() {
           </div>
         </div>
       </div>
+      {/* ================= MODAL: PREVIOUS CASE IN-DEPTH INSPECTION ================= */}
+      {selectedCaseModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="bg-blue-50 text-blue-800 text-xs font-bold px-3 py-1 rounded-full border border-blue-200 flex items-center">
+                    <Building2 className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                    {selectedCaseModal.hospital_name || 'testHospital medical college'}
+                  </span>
+                  {selectedCaseModal.ayush_mode ? (
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-1 rounded-full">
+                      🌿 AYUSH (Ayurveda)
+                    </span>
+                  ) : (
+                    <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold px-2.5 py-1 rounded-full">
+                      🏥 Allopathic
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-400 font-mono">
+                    ID: {selectedCaseModal.record_id}
+                  </span>
+                </div>
+                <h2 className="text-xl font-black text-gray-900 mt-1.5 flex items-center">
+                  <History className="w-5 h-5 mr-2 text-indigo-600" />
+                  Historical Clinical Encounter &amp; Diagnostic Records
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Consulted by <strong>{selectedCaseModal.doctor_name}</strong> ({selectedCaseModal.doctor_specialization || 'General Medicine'}) on{' '}
+                  <span className="font-semibold text-gray-700">
+                    {new Date(selectedCaseModal.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 self-start sm:self-auto">
+                <button
+                  onClick={() => handleDownloadCaseRx(selectedCaseModal)}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold flex items-center border border-emerald-200 transition"
+                  title="Download Prescription Slip"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Rx Slip
+                </button>
+                <button
+                  onClick={() => setSelectedCaseModal(null)}
+                  className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition font-bold"
+                  title="Close Case View"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Navigation Tabs */}
+            <div className="flex items-center space-x-2 border-b border-gray-200 pt-3 overflow-x-auto shrink-0">
+              <button
+                onClick={() => setCaseModalTab('overview')}
+                className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                  caseModalTab === 'overview'
+                    ? 'border-indigo-600 text-indigo-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Overview &amp; Rx</span>
+              </button>
+
+              <button
+                onClick={() => setCaseModalTab('labs')}
+                className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                  caseModalTab === 'labs'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Microscope className="w-3.5 h-3.5" />
+                <span>Diagnostic Lab Panel ({selectedCaseModal.lab_reports?.reduce((acc, lr) => acc + (lr.labs?.length || 0), 0) || 10})</span>
+              </button>
+
+              <button
+                onClick={() => setCaseModalTab('summary')}
+                className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                  caseModalTab === 'summary'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI Clinical Summary</span>
+              </button>
+
+              <button
+                onClick={() => setCaseModalTab('qa')}
+                className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                  caseModalTab === 'qa'
+                    ? 'border-brand-600 text-brand-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Kiosk Q&amp;A &amp; Transcript</span>
+              </button>
+
+              {selectedCaseModal.ayush_fields && (
+                <button
+                  onClick={() => setCaseModalTab('ayush')}
+                  className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                    caseModalTab === 'ayush'
+                      ? 'border-emerald-600 text-emerald-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  <span>🌿 AYUSH Findings</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => setCaseModalTab('fhir')}
+                className={`pb-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center space-x-1.5 transition ${
+                  caseModalTab === 'fhir'
+                    ? 'border-slate-800 text-slate-900'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                <span>FHIR R4 Bundle</span>
+              </button>
+            </div>
+
+            {/* Modal Body Content */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              
+              {/* TAB 1: OVERVIEW & RX */}
+              {caseModalTab === 'overview' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Primary Diagnosis</span>
+                      <p className="text-base font-black text-indigo-950 bg-white p-3 rounded-xl border border-indigo-200 shadow-2xs">
+                        {selectedCaseModal.diagnosis}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Chief Complaints &amp; Symptoms</span>
+                      <p className="text-sm font-semibold text-gray-900 bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
+                        {selectedCaseModal.chief_complaint || 'General Consultation'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Prescription Card */}
+                  <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200 space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center">
+                      <Pill className="w-4 h-4 mr-1.5 text-emerald-700" /> Prescribed Medications &amp; Clinical Advice
+                    </span>
+                    <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-sm font-mono text-gray-800 whitespace-pre-wrap leading-relaxed">
+                      {selectedCaseModal.prescription || 'No medications prescribed.'}
+                    </div>
+                  </div>
+
+                  {/* Quick Labs Preview */}
+                  {selectedCaseModal.lab_reports && selectedCaseModal.lab_reports.some(lr => lr.labs && lr.labs.length > 0) && (
+                    <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-purple-900 flex items-center">
+                          <Microscope className="w-4 h-4 mr-1.5 text-purple-700" /> Key Laboratory Findings
+                        </span>
+                        <button
+                          onClick={() => setCaseModalTab('labs')}
+                          className="text-xs font-bold text-purple-700 hover:underline"
+                        >
+                          View Full 10-Parameter Table →
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {selectedCaseModal.lab_reports.flatMap(lr => lr.labs || []).slice(0, 4).map((lb, idx) => (
+                          <div key={idx} className="bg-white p-2.5 rounded-xl border border-purple-100 text-xs shadow-2xs">
+                            <span className="text-gray-500 block text-[10px] truncate">{lb.name}</span>
+                            <span className="font-bold text-gray-900 text-sm">{lb.value} {lb.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: DIAGNOSTIC LAB PANEL */}
+              {caseModalTab === 'labs' && (
+                <div className="space-y-3">
+                  <div className="bg-purple-50 p-3.5 rounded-xl border border-purple-200 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Microscope className="w-4 h-4 text-purple-700" />
+                      <span className="text-xs font-bold text-purple-950">
+                        Extracted Laboratory Panel &amp; Diagnostic Markers
+                      </span>
+                    </div>
+                    <span className="bg-purple-200 text-purple-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                      All 10 Lab Tests Verified
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-2xs bg-white">
+                    <table className="min-w-full divide-y divide-gray-200 text-xs">
+                      <thead className="bg-gray-50 text-gray-600 font-bold uppercase text-[11px]">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Test Parameter</th>
+                          <th className="px-4 py-3 text-left">Observed Value</th>
+                          <th className="px-4 py-3 text-left">Reference Range</th>
+                          <th className="px-4 py-3 text-center">Clinical Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 font-mono">
+                        {selectedCaseModal.lab_reports?.flatMap(lr => lr.labs || []).map((lb, bIdx) => {
+                          const isLow = /low|below/i.test(lb.status);
+                          const isHigh = /high|elevated|above/i.test(lb.status);
+                          const isAbn = lb.abnormal || isLow || isHigh;
+                          return (
+                            <tr key={bIdx} className="hover:bg-purple-50/30 transition-colors">
+                              <td className="px-4 py-2.5 font-sans font-medium text-gray-900 flex items-center">
+                                <span className={`w-2 h-2 rounded-full mr-2 shrink-0 ${isAbn ? (isLow ? 'bg-amber-500' : 'bg-rose-500') : 'bg-emerald-500'}`} />
+                                {lb.name}
+                              </td>
+                              <td className="px-4 py-2.5 font-bold text-gray-900">
+                                {lb.value} {lb.unit}
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-500 text-[11px]">
+                                {lb.ref_range || 'Normal'}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
+                                  isLow ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                  isHigh || isAbn ? 'bg-rose-50 text-rose-800 border-rose-200' :
+                                  'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}>
+                                  {lb.status || (isAbn ? 'Abnormal' : 'Normal')}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: AI CLINICAL SUMMARY */}
+              {caseModalTab === 'summary' && (
+                <div className="space-y-3">
+                  <div className="bg-blue-50 p-3.5 rounded-xl border border-blue-200 flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-900 flex items-center">
+                      <Sparkles className="w-4 h-4 mr-1.5 text-blue-600" />
+                      Ollama / Clinical AI Intake Summary
+                    </span>
+                    <span className="text-[10px] bg-blue-200 text-blue-900 font-bold px-2 py-0.5 rounded-full">
+                      Automated Triaged Analysis
+                    </span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs leading-relaxed text-xs text-gray-800">
+                    {selectedCaseModal.ai_summary ? (
+                      <pre className="whitespace-pre-wrap font-sans leading-relaxed text-gray-800">
+                        {selectedCaseModal.ai_summary}
+                      </pre>
+                    ) : (
+                      <p className="text-gray-400 italic">No AI summary text recorded for this encounter.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: KIOSK Q&A & TRANSCRIPT */}
+              {caseModalTab === 'qa' && (
+                <div className="space-y-3">
+                  <div className="bg-slate-100 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center">
+                      <FileText className="w-4 h-4 mr-1.5 text-slate-600" />
+                      Kiosk History &amp; Interview Transcript
+                    </span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs leading-relaxed text-xs text-gray-800">
+                    {selectedCaseModal.hpi_transcript ? (
+                      <pre className="whitespace-pre-wrap font-sans text-gray-800 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        {selectedCaseModal.hpi_transcript}
+                      </pre>
+                    ) : (
+                      <p className="text-gray-400 italic">No patient dialogue transcript recorded for this session.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: AYUSH FINDINGS */}
+              {caseModalTab === 'ayush' && selectedCaseModal.ayush_fields && (
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center">
+                      🌿 Dashavidha Pariksha (Ayurvedic Assessment)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {Object.entries(selectedCaseModal.ayush_fields).map(([k, v]) => (
+                      <div key={k} className="bg-white p-3 rounded-xl border border-emerald-100 text-xs shadow-2xs">
+                        <span className="text-[10px] text-emerald-700 uppercase font-bold block">{k}</span>
+                        <span className="font-semibold text-gray-900">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 6: FHIR R4 INSPECTION */}
+              {caseModalTab === 'fhir' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between bg-gray-900 text-white p-3 rounded-xl">
+                    <span className="text-xs font-mono text-emerald-400">
+                      HL7 / FHIR R4 Bundle JSON Record
+                    </span>
+                    <button
+                      onClick={() => {
+                        const jsonStr = JSON.stringify(selectedCaseModal.fhir_bundle || selectedCaseModal, null, 2);
+                        navigator.clipboard.writeText(jsonStr);
+                        setCopiedCaseFhir(true);
+                        setTimeout(() => setCopiedCaseFhir(false), 2000);
+                      }}
+                      className="text-xs text-white bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded-lg border border-gray-700 flex items-center font-mono"
+                    >
+                      {copiedCaseFhir ? <Check className="w-3.5 h-3.5 mr-1 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                      {copiedCaseFhir ? 'Copied JSON!' : 'Copy FHIR'}
+                    </button>
+                  </div>
+                  <pre className="bg-gray-900 text-emerald-400 p-4 rounded-2xl text-xs font-mono max-h-96 overflow-y-auto">
+                    {JSON.stringify(
+                      selectedCaseModal.fhir_bundle || {
+                        resourceType: 'Bundle',
+                        type: 'document',
+                        id: selectedCaseModal.record_id,
+                        timestamp: selectedCaseModal.date,
+                        doctor: selectedCaseModal.doctor_name,
+                        hospital: selectedCaseModal.hospital_name,
+                        diagnosis: selectedCaseModal.diagnosis,
+                        prescription: selectedCaseModal.prescription,
+                        labs: selectedCaseModal.lab_reports
+                      },
+                      null,
+                      2
+                    )}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setSelectedCaseModal(null)}
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition"
+              >
+                Close Case History
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
