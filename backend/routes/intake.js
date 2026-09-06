@@ -268,11 +268,21 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
     // Respond immediately -- don't block on (potentially slow) LLM
     res.json({ ok: true, status: "submitted", token: s.token });
 
-    // Fire-and-forget AI summary
+    // Fire-and-forget AI summary and enrich extracted_labs
     setImmediate(async () => {
       try {
         const summary = await generateSummary(s.toObject(), docs.map(d => d.toObject()));
-        if (summary) await IntakeSession.findByIdAndUpdate(s.id, { summary });
+        if (summary) {
+          await IntakeSession.findByIdAndUpdate(s.id, { summary });
+          const { extractLabs } = require("../extract");
+          const summaryLabs = extractLabs(summary);
+          if (summaryLabs.length > 0) {
+            await Document.updateMany(
+              { session_id: s.id },
+              { $set: { extracted_labs: summaryLabs } }
+            );
+          }
+        }
       } catch (e) {
         console.info("[intake] Post-submit summary error:", e.message?.slice(0, 60));
       }
@@ -290,6 +300,14 @@ router.post("/:id/summarize", requireAuth, requireRole("doctor", "hospital_admin
     const summary = await generateSummary(s.toObject(), docs.map(d => d.toObject()));
     if (summary) {
       await IntakeSession.findByIdAndUpdate(s.id, { summary });
+      const { extractLabs } = require("../extract");
+      const summaryLabs = extractLabs(summary);
+      if (summaryLabs.length > 0) {
+        await Document.updateMany(
+          { session_id: s.id },
+          { $set: { extracted_labs: summaryLabs } }
+        );
+      }
       res.json({ ok: true, summary });
     } else {
       res.json({ ok: false, summary: null, message: "LLM unavailable -- summary not generated" });
@@ -313,7 +331,21 @@ router.get("/:id", requireAuth, async (req, res) => {
       hpi_details: s.hpi_details || [], parameters: s.parameters || [],
       pmh: s.pmh, allergies: s.allergies, diagnosis: s.diagnosis,
       prescription: s.prescription, summary: s.summary || null,
-      documents: docs.map(d => ({ id: d.id, filename: d.filename, medications: d.extracted_meds || [], labs: d.extracted_labs || [], raw_text: d.raw_ocr_text })),
+      documents: docs.map(d => {
+        let labs = d.extracted_labs || [];
+        if (labs.length <= 1 && s.summary) {
+          const { extractLabs } = require("../extract");
+          const sumLabs = extractLabs(s.summary);
+          if (sumLabs.length > labs.length) labs = sumLabs;
+        }
+        return {
+          id: d.id,
+          filename: d.filename,
+          medications: d.extracted_meds || [],
+          labs,
+          raw_text: d.raw_ocr_text
+        };
+      }),
       fhir_bundle: s.fhir_bundle || null, reviewed_at: s.reviewed_at, review_seconds: s.review_seconds,
     });
   } catch (err) { res.status(500).json({ error: err.message || "Failed to get session details" }); }

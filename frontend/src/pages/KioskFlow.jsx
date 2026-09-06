@@ -9,7 +9,7 @@ import {
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
 import { useSpeech, SUPPORTED_LANGUAGES } from '../hooks/useSpeech';
-import { getTranslation, SYMPTOM_TRANSLATIONS, STEP_PROMPTS_BY_LANG, getQuestionOptions } from '../utils/kioskTranslations';
+import { getTranslation, SYMPTOM_TRANSLATIONS, STEP_PROMPTS_BY_LANG, getQuestionOptions, getAyushLabelTrans, getAyushQuestionTrans, getAyushOptionTrans } from '../utils/kioskTranslations';
 
 
 const getQEng = (q) => (typeof q === "object" && q ? q.english || q.translated : q) || "";
@@ -219,9 +219,13 @@ export default function KioskFlow() {
     stopSpeaking();
     setSelectedLanguage(lang);
     if (audioEnabled) {
-      const prompt = STEP_PROMPTS_BY_LANG[lang]?.[step] || STEP_PROMPTS_BY_LANG.English[lang] || STEP_PROMPTS_BY_LANG.English[step];
-      if (prompt) {
-        speak(prompt, lang);
+      if (step === 4.5 && ayushQuestions.length > 0 && ayushSubStep < ayushQuestions.length) {
+        const q = ayushQuestions[ayushSubStep];
+        const transQ = getAyushQuestionTrans(q, lang);
+        if (transQ) speak(transQ, lang);
+      } else {
+        const prompt = STEP_PROMPTS_BY_LANG[lang]?.[step] || STEP_PROMPTS_BY_LANG.English[lang] || STEP_PROMPTS_BY_LANG.English[step];
+        if (prompt) speak(prompt, lang);
       }
     }
   };
@@ -354,6 +358,10 @@ export default function KioskFlow() {
       handleHpiVoiceInput();
       return;
     }
+    if (step === 4.5) {
+      handleAyushVoiceInput();
+      return;
+    }
     if (isListening) { stopListening(); return; }
     stopSpeaking();
     startListening(
@@ -366,6 +374,37 @@ export default function KioskFlow() {
         }));
       },
       e => console.warn('ASR error:', e.message)
+    );
+  };
+
+  const handleAyushVoiceInput = () => {
+    if (isListening) { stopListening(); return; }
+    stopSpeaking();
+    const currentQ = ayushQuestions[ayushSubStep];
+    if (!currentQ) return;
+    startListening(
+      selectedLanguage,
+      transcript => {
+        if (!transcript) return;
+        const cleanText = transcript.trim();
+        // Match against options in English or translated language
+        let matchedOption = null;
+        for (const opt of currentQ.options) {
+          const transOpt = getAyushOptionTrans(currentQ.field, opt, selectedLanguage);
+          if (
+            cleanText.toLowerCase().includes(opt.toLowerCase()) ||
+            cleanText.toLowerCase().includes(transOpt.toLowerCase()) ||
+            opt.toLowerCase().includes(cleanText.toLowerCase()) ||
+            transOpt.toLowerCase().includes(cleanText.toLowerCase())
+          ) {
+            matchedOption = opt;
+            break;
+          }
+        }
+        const finalValue = matchedOption || cleanText;
+        handleAyushAnswer(currentQ.field, finalValue);
+      },
+      e => console.warn('ASR error in AYUSH step:', e.message)
     );
   };
 
@@ -509,8 +548,18 @@ export default function KioskFlow() {
   };
 
   const handleAyushAnswer = (field, value) => {
-    setIntakeData({ ...intakeData, ayushData: { ...intakeData.ayushData, [field]: value } });
-    if (ayushSubStep < ayushQuestions.length - 1) setAyushSubStep(s => s + 1);
+    setIntakeData(p => ({ ...p, ayushData: { ...p.ayushData, [field]: value } }));
+    if (ayushSubStep < ayushQuestions.length - 1) {
+      setAyushSubStep(s => s + 1);
+      const nextQ = ayushQuestions[ayushSubStep + 1];
+      if (audioEnabled && nextQ) {
+        const transQ = getAyushQuestionTrans(nextQ, selectedLanguage);
+        setTimeout(() => speak(transQ, selectedLanguage), 300);
+      }
+    } else {
+      // Completed all 10 Dashavidha Pariksha questions -> Move to Step 5 (OCR Scan)!
+      setStep(5);
+    }
   };
 
   const handleFileChange = async (e) => {
@@ -585,7 +634,19 @@ export default function KioskFlow() {
     if (step === 3) { goToHpiStep(); return; }
     if (step === 4 && hpiSubStep < hpiQuestions.length - 1) { setHpiSubStep(s => s + 1); return; }
     if (step === 4 && intakeData.mode === 'AYUSH') { setStep(4.5); return; }
-    if (step === 4.5 && ayushSubStep < ayushQuestions.length - 1) { setAyushSubStep(s => s + 1); return; }
+    if (step === 4.5) {
+      if (ayushSubStep < ayushQuestions.length - 1) {
+        setAyushSubStep(s => s + 1);
+        const nextQ = ayushQuestions[ayushSubStep + 1];
+        if (audioEnabled && nextQ) {
+          const transQ = getAyushQuestionTrans(nextQ, selectedLanguage);
+          setTimeout(() => speak(transQ, selectedLanguage), 300);
+        }
+      } else {
+        setStep(5);
+      }
+      return;
+    }
     if (step === 5) { goToDoctorStep(); return; }
     setStep(s => s + 1);
   };
@@ -595,7 +656,15 @@ export default function KioskFlow() {
     if (step === 4)                        { setStep(3); return; }
     if (step === 4.5 && ayushSubStep > 0)  { setAyushSubStep(s => s - 1); return; }
     if (step === 4.5)                      { setStep(4); return; }
-    if (step === 5 && intakeData.mode === 'Allopathic') { setStep(4); return; }
+    if (step === 5) {
+      if (intakeData.mode === 'AYUSH') {
+        setStep(4.5);
+        setAyushSubStep(ayushQuestions.length > 0 ? ayushQuestions.length - 1 : 0);
+      } else {
+        setStep(4);
+      }
+      return;
+    }
     setStep(s => Math.max(0, s - 1));
   };
 
@@ -1071,31 +1140,154 @@ export default function KioskFlow() {
 
             {step === 4.5 && (
               <motion.div key="s45" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto">
-                <h2 className="text-2xl font-bold text-gray-900 mb-1">Dashavidha Pariksha</h2>
-                <p className="text-gray-500 mb-6">Question {Math.min(ayushSubStep + 1, ayushQuestions.length)} of {ayushQuestions.length}</p>
+                className="h-full flex flex-col justify-center max-w-2xl mx-auto overflow-y-auto pr-1">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    Dashavidha Pariksha
+                    {selectedLanguage !== 'English' && <span className="text-emerald-700 ml-2 font-semibold text-lg">({t('ayushTitleSection') || 'দশবিধ পরীক্ষা'})</span>}
+                  </h2>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-gray-500 text-sm font-medium">
+                    {t('questionCount', Math.min(ayushSubStep + 1, ayushQuestions.length), ayushQuestions.length)}
+                  </p>
+                  <div className="flex space-x-1">
+                    {ayushQuestions.map((_, i) => (
+                      <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < ayushSubStep ? 'bg-emerald-600' : i === ayushSubStep ? 'bg-emerald-400 ring-2 ring-emerald-200' : 'bg-gray-200'}`} />
+                    ))}
+                  </div>
+                </div>
+
                 {ayushQuestions.length === 0 ? (
-                  <div className="text-center text-gray-400 py-12">Loading Ayurvedic questions...</div>
+                  <div className="text-center text-gray-400 py-12 flex flex-col items-center">
+                    <Loader className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
+                    <span>Loading Ayurvedic questions...</span>
+                  </div>
                 ) : ayushSubStep < ayushQuestions.length ? (() => {
                   const q = ayushQuestions[ayushSubStep];
+                  const transLabel = getAyushLabelTrans(q.field, selectedLanguage, q.label);
+                  const transQ = getAyushQuestionTrans(q, selectedLanguage);
+                  const selectedVal = intakeData.ayushData[q.field] || '';
+
                   return (
-                    <div className="space-y-6">
-                      <div className="bg-accent-50 p-5 rounded-xl border border-accent-200">
-                        <p className="text-xs font-bold text-accent-600 uppercase mb-2">{q.label}</p>
-                        <p className="text-xl font-semibold text-gray-900">{q.question}</p>
+                    <div className="space-y-4">
+                      {/* Bilingual Ayurvedic Question Box */}
+                      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-5 rounded-2xl border border-emerald-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                            {transLabel}
+                          </span>
+                          {selectedLanguage !== 'English' && (
+                            <span className="text-xs text-gray-400 font-medium">
+                              {q.label}
+                            </span>
+                          )}
+                        </div>
+                        {selectedLanguage !== 'English' && (
+                          <p className="text-sm font-semibold text-emerald-800 mb-1.5 pb-1 border-b border-emerald-200/60">
+                            {q.question}
+                          </p>
+                        )}
+                        <p className="text-xl font-bold text-gray-900 leading-snug">
+                          {transQ}
+                        </p>
                       </div>
-                      <div className="space-y-3">
-                        {q.options.map(opt => (
-                          <button key={opt} onClick={() => handleAyushAnswer(q.field, opt)}
-                            className={`w-full text-left px-5 py-4 rounded-xl border-2 font-medium transition text-gray-800 ${intakeData.ayushData[q.field] === opt ? 'border-accent-500 bg-accent-50 text-accent-800' : 'border-gray-200 hover:border-accent-300 hover:bg-accent-50/50'}`}>
-                            {opt}
-                          </button>
-                        ))}
+
+                      {/* Options List */}
+                      <div className="space-y-2.5 max-h-[30vh] overflow-y-auto pr-1">
+                        {q.options.map(opt => {
+                          const transOpt = getAyushOptionTrans(q.field, opt, selectedLanguage);
+                          const isSelected = selectedVal === opt || selectedVal === transOpt;
+
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => handleAyushAnswer(q.field, opt)}
+                              className={`w-full text-left px-5 py-3.5 rounded-xl border-2 transition-all flex flex-col justify-center ${
+                                isSelected
+                                  ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-md ring-2 ring-emerald-200 font-semibold'
+                                  : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/40 text-gray-800 font-medium'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-base text-gray-900 font-semibold">{transOpt}</span>
+                                {isSelected && <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 ml-2" />}
+                              </div>
+                              {selectedLanguage !== 'English' && transOpt !== opt && (
+                                <span className="text-xs text-gray-500 mt-0.5">{opt}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Voice Mic & Transcription Input Bar */}
+                      <div className="flex items-center space-x-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                        <button
+                          type="button"
+                          onClick={handleAyushVoiceInput}
+                          className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-all ${
+                            isListening ? 'bg-red-500 animate-pulse ring-4 ring-red-200' : 'bg-emerald-600 hover:bg-emerald-700'
+                          }`}
+                          title={`Speak in ${selectedLanguage}`}
+                        >
+                          <Mic className="w-6 h-6" />
+                        </button>
+                        <input
+                          type="text"
+                          value={selectedVal}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setIntakeData(p => ({ ...p, ayushData: { ...p.ayushData, [q.field]: val } }));
+                          }}
+                          placeholder={isListening ? t('listening', selectedLanguage) : t('answerPlaceholder')}
+                          className="flex-1 bg-white px-3.5 py-2.5 rounded-lg border border-gray-300 text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                      </div>
+
+                      {/* Next / Skip Buttons */}
+                      <div className="flex space-x-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAyushAnswer(q.field, selectedVal || q.options[0]);
+                          }}
+                          className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition flex items-center justify-center shadow"
+                        >
+                          {ayushSubStep < ayushQuestions.length - 1 ? (
+                            <><ChevronRight className="w-5 h-5 mr-1" />{t('nextQuestion')}</>
+                          ) : (
+                            <><CheckCircle className="w-5 h-5 mr-1" />{t('done')}</>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (ayushSubStep < ayushQuestions.length - 1) {
+                              setAyushSubStep(s => s + 1);
+                              const nextQ = ayushQuestions[ayushSubStep + 1];
+                              if (audioEnabled && nextQ) {
+                                const trQ = getAyushQuestionTrans(nextQ, selectedLanguage);
+                                setTimeout(() => speak(trQ, selectedLanguage), 300);
+                              }
+                            } else {
+                              setStep(5);
+                            }
+                          }}
+                          className="px-4 bg-gray-100 text-gray-600 py-3 rounded-xl font-medium hover:bg-gray-200 transition text-sm"
+                        >
+                          {t('skip')}
+                        </button>
                       </div>
                     </div>
                   );
                 })() : (
-                  <div className="text-center py-8"><CheckCircle className="w-16 h-16 text-accent-600 mx-auto mb-4" /><p className="text-xl font-bold text-gray-900">Assessment Complete</p></div>
+                  <div className="text-center py-8">
+                    <CheckCircle className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
+                    <p className="text-xl font-bold text-gray-900">{t('historyCaptured')}</p>
+                    <p className="text-gray-500 mt-2">{t('allAnswered', ayushQuestions.length)}</p>
+                  </div>
                 )}
               </motion.div>
             )}
@@ -1194,6 +1386,19 @@ export default function KioskFlow() {
                     <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200">
                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">HPI &amp; Interview Answers</h3>
                       <pre className="text-gray-800 leading-relaxed text-sm whitespace-pre-wrap font-sans">{intakeData.hpi}</pre>
+                    </div>
+                  )}
+                  {intakeData.mode === 'AYUSH' && Object.keys(intakeData.ayushData || {}).length > 0 && (
+                    <div className="bg-emerald-50/70 p-5 rounded-2xl border border-emerald-200">
+                      <h3 className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">🌿 Dashavidha Pariksha (Ayurvedic Assessment)</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        {Object.entries(intakeData.ayushData).map(([k, v]) => (
+                          <div key={k} className="bg-white p-2.5 rounded-lg border border-emerald-100 shadow-xs">
+                            <span className="text-xs text-gray-500 block uppercase font-medium">{getAyushLabelTrans(k, selectedLanguage, k)}</span>
+                            <span className="font-semibold text-gray-800">{getAyushOptionTrans(k, v, selectedLanguage)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {selectedDoctor && (() => {

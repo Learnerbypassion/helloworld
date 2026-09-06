@@ -214,8 +214,10 @@ router.post("/doctor/login", async (req, res) => {
     if (!doctor || !isValidPass) {
       return res.status(401).json({ error: "Invalid email/phone or password" });
     }
-    const token = signToken({ role: "doctor", id: doctor.id, hospital_id: doctor.hospital_id, name: doctor.name });
-    res.json({ token, doctor: { id: doctor.id, name: doctor.name, doctor_type: doctor.doctor_type, specialization: doctor.specialization } });
+    const hosp = await Hospital.findById(doctor.hospital_id).catch(() => null);
+    const hospName = hosp ? hosp.name : "testHospital medical college";
+    const token = signToken({ role: "doctor", id: doctor.id, hospital_id: doctor.hospital_id, hospital_name: hospName, name: doctor.name });
+    res.json({ token, doctor: { id: doctor.id, name: doctor.name, hospital_id: doctor.hospital_id, hospital_name: hospName, doctor_type: doctor.doctor_type, specialization: doctor.specialization } });
   } catch (err) {
     res.status(500).json({ error: err.message || "Doctor login failed" });
   }

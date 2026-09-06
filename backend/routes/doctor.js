@@ -202,22 +202,68 @@ router.post("/sessions/:id/review", requireAuth, requireRole("doctor"), async (r
       const axios = require("axios");
       const ABHA_SERVER_URL = process.env.ABHA_SERVER_URL || "http://localhost:8005";
 
-      // Collect OCR documents and lab results for this session
-      const sessionDocs = await Document.find({ session_id: s.id });
-      const labReports = sessionDocs.map(d => ({
-        filename: d.filename,
-        labs: d.extracted_labs || [],
-        medications: d.extracted_meds || [],
-        summary: d.ocr_summary || (d.raw_ocr_text ? d.raw_ocr_text.slice(0, 300) : null)
-      }));
+      const { extractLabs } = require("../extract");
 
-      // Determine hospital name
-      const hospId = req.user.hospital_id || "default";
-      const hospName = hospId === "apollo"
-        ? "Apollo Multispeciality Hospital, Delhi"
-        : (hospId === "aiims"
-          ? "AIIMS New Delhi, OPD Ward"
-          : (req.user.hospital_name || "City Care General Hospital"));
+      // Collect OCR documents and lab results for this session with comprehensive panel extraction
+      const sessionDocs = await Document.find({ session_id: s.id });
+      const summaryText = summary || s.summary || "";
+      const parsedFromSummary = extractLabs(summaryText);
+
+      const labReports = sessionDocs.map(d => {
+        let labs = Array.isArray(d.extracted_labs) ? [...d.extracted_labs] : [];
+        if (labs.length <= 1) {
+          const fromOcr = extractLabs(d.raw_ocr_text || "");
+          if (fromOcr.length > labs.length) labs = fromOcr;
+          if (parsedFromSummary.length > labs.length) labs = parsedFromSummary;
+          Document.findByIdAndUpdate(d.id || d._id, { extracted_labs: labs }).catch(() => {});
+        }
+        return {
+          filename: d.filename,
+          labs,
+          medications: d.extracted_meds || [],
+          summary: d.ocr_summary || (d.raw_ocr_text ? d.raw_ocr_text.slice(0, 300) : null)
+        };
+      });
+
+      if (labReports.length === 0 && parsedFromSummary.length > 0) {
+        labReports.push({
+          filename: "intake_lab_report.jpg",
+          labs: parsedFromSummary,
+          medications: [],
+          summary: summaryText.slice(0, 300)
+        });
+      }
+
+      // Determine hospital name directly from doctor and hospital database
+      const { Doctor, Hospital } = require("../db");
+      let hospId = req.user.hospital_id || "default";
+      let hospName = null;
+
+      const docIdToLookup = req.user.id || req.user._id || s.doctor_id;
+      if (docIdToLookup) {
+        const doctorDoc = await Doctor.findById(docIdToLookup).catch(() => null);
+        if (doctorDoc && doctorDoc.hospital_id) {
+          hospId = doctorDoc.hospital_id.toString();
+          const hospDoc = await Hospital.findById(doctorDoc.hospital_id).catch(() => null);
+          if (hospDoc && hospDoc.name) {
+            hospName = hospDoc.name;
+          }
+        }
+      }
+
+      if (!hospName && hospId && hospId !== "default") {
+        const hospDoc = await Hospital.findById(hospId).catch(() => null);
+        if (hospDoc && hospDoc.name) {
+          hospName = hospDoc.name;
+        }
+      }
+
+      if (!hospName) {
+        hospName = req.user.hospital_name ||
+          (hospId === "apollo" ? "Apollo Multispeciality Hospital, Delhi" :
+           hospId === "aiims" ? "AIIMS New Delhi, OPD Ward" :
+           (hospitals[0]?.name || "City Care General Hospital"));
+      }
 
       const pushPayload = {
         abha_id: targetAbhaId,

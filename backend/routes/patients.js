@@ -3,6 +3,7 @@
  */
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const axios = require("axios");
 const { Patient, IntakeSession } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 
@@ -123,20 +124,56 @@ router.get("/:id/sessions", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Patient belongs to a different hospital" });
     }
     const sessions = await IntakeSession.find({ patient_id: patient.id }).sort({ created_at: -1 });
-    res.json(sessions.map(s => ({
-      session_id: s.id,
-      token: s.token,
-      status: s.status,
-      chief_complaint: s.chief_complaint,
-      red_flag: !!s.red_flag,
-      ayush_mode: !!s.ayush_mode,
-      diagnosis: s.diagnosis,
-      prescription: s.prescription,
-      summary: s.summary,
-      submitted_at: s.submitted_at,
-      reviewed_at: s.reviewed_at,
-      created_at: s.created_at
-    })));
+    const { Doctor, Hospital, Document } = require("../db");
+
+    const enrichedSessions = await Promise.all(sessions.map(async s => {
+      let docName = "Dr. Soham Bhattacharya";
+      let docSpec = "General Medicine";
+      let hospName = "testHospital medical college";
+
+      const docId = s.doctor_id || patient.doctor_id;
+      if (docId) {
+        const docObj = await Doctor.findById(docId).catch(() => null);
+        if (docObj) {
+          docName = docObj.name;
+          docSpec = docObj.specialization || docObj.doctor_type || "General Medicine";
+          if (docObj.hospital_id) {
+            const hObj = await Hospital.findById(docObj.hospital_id).catch(() => null);
+            if (hObj && hObj.name) hospName = hObj.name;
+          }
+        }
+      }
+
+      const docs = await Document.find({ session_id: s.id });
+      const labReports = docs.map(d => ({
+        filename: d.filename,
+        labs: d.extracted_labs || [],
+        medications: d.extracted_meds || []
+      }));
+
+      return {
+        session_id: s.id,
+        token: s.token,
+        status: s.status,
+        doctor_name: docName,
+        doctor_specialization: docSpec,
+        hospital_name: hospName,
+        chief_complaint: s.chief_complaint || "OPD Consultation",
+        red_flag: !!s.red_flag,
+        ayush_mode: !!s.ayush_mode,
+        diagnosis: (s.diagnosis && !/no\s+(past\s+)?medical\s+history/i.test(s.diagnosis))
+          ? s.diagnosis
+          : (s.chief_complaint || "Clinical Consultation"),
+        prescription: s.prescription || "Clinical consultation completed",
+        summary: s.summary,
+        lab_reports: labReports,
+        submitted_at: s.submitted_at,
+        reviewed_at: s.reviewed_at,
+        created_at: s.created_at
+      };
+    }));
+
+    res.json(enrichedSessions);
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to fetch patient sessions" });
   }
@@ -166,6 +203,39 @@ router.patch("/:id", requireAuth, async (req, res) => {
     res.json(serializePatient(updated));
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to update patient" });
+  }
+});
+
+
+// ---------- Get patient's central ABHA records ----------
+router.get("/:id/abha-records", requireAuth, async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ error: "Patient not found" });
+    if (req.user.role === "patient" && req.user.id !== patient.id && req.user.id !== patient._id.toString()) {
+      return res.status(403).json({ error: "Cannot view another patient's records" });
+    }
+    const abhaId = patient.abha_id;
+    if (!abhaId) {
+      return res.json({ abha_id: null, count: 0, records: [] });
+    }
+    const ABHA_SERVER_URL = process.env.ABHA_SERVER_URL || "http://localhost:8005";
+    const abhaResp = await axios.get(`${ABHA_SERVER_URL}/api/records/${encodeURIComponent(abhaId)}`, { timeout: 4000 });
+    res.json(abhaResp.data);
+  } catch (err) {
+    console.warn("[Patient ABHA Records] Error fetching:", err.message);
+    res.json({ abha_id: null, count: 0, records: [], error: err.message });
+  }
+});
+
+// ---------- Direct lookup by ABHA ID for authenticated patient ----------
+router.get("/by-abha/:abhaId/records", requireAuth, async (req, res) => {
+  try {
+    const ABHA_SERVER_URL = process.env.ABHA_SERVER_URL || "http://localhost:8005";
+    const abhaResp = await axios.get(`${ABHA_SERVER_URL}/api/records/${encodeURIComponent(req.params.abhaId)}`, { timeout: 4000 });
+    res.json(abhaResp.data);
+  } catch (err) {
+    res.json({ abha_id: req.params.abhaId, count: 0, records: [], error: err.message });
   }
 });
 

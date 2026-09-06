@@ -620,6 +620,49 @@ export default function DoctorDashboard() {
                                 <span className="font-bold text-emerald-900 block mb-0.5">Prescription & Rx:</span>
                                 <p className="text-gray-800 font-mono text-[11px] whitespace-pre-wrap">{rec.prescription}</p>
                               </div>
+
+                              {rec.lab_reports && rec.lab_reports.some(lr => lr.labs && lr.labs.length > 0) && (
+                                <div className="bg-white p-3 rounded-lg border border-purple-200 text-xs space-y-2">
+                                  <span className="font-bold text-purple-900 flex items-center justify-between">
+                                    <span>🔬 Historical Diagnostic Lab Tests ({rec.lab_reports.reduce((acc, lr) => acc + (lr.labs?.length || 0), 0)} Parameters)</span>
+                                  </span>
+                                  <div className="overflow-x-auto max-h-56 overflow-y-auto border border-purple-100 rounded">
+                                    <table className="min-w-full text-left text-[11px]">
+                                      <thead className="bg-purple-50 text-purple-900 uppercase font-semibold">
+                                        <tr>
+                                          <th className="py-1 px-2">Test Parameter</th>
+                                          <th className="py-1 px-2">Observed</th>
+                                          <th className="py-1 px-2">Ref Range</th>
+                                          <th className="py-1 px-2 text-center">Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100 font-mono">
+                                        {rec.lab_reports.flatMap(lr => lr.labs || []).map((lb, bIdx) => {
+                                          const isLow = /low|below/i.test(lb.status);
+                                          const isHigh = /high|elevated|above/i.test(lb.status);
+                                          const isAbn = lb.abnormal || isLow || isHigh;
+                                          return (
+                                            <tr key={bIdx} className="hover:bg-purple-50/30">
+                                              <td className="py-1 px-2 font-sans font-medium text-gray-800">{lb.name}</td>
+                                              <td className="py-1 px-2 font-bold text-gray-900">{lb.value} {lb.unit}</td>
+                                              <td className="py-1 px-2 text-gray-500">{lb.ref_range || 'Normal'}</td>
+                                              <td className="py-1 px-2 text-center">
+                                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                                  isLow ? 'bg-amber-100 text-amber-800' :
+                                                  isHigh || isAbn ? 'bg-rose-100 text-rose-800' :
+                                                  'bg-emerald-100 text-emerald-800'
+                                                }`}>
+                                                  {lb.status || (isAbn ? 'Abnormal' : 'Normal')}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
