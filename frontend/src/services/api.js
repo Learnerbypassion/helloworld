@@ -162,4 +162,11 @@ export const api = {
   deleteDecisionTree: (hospitalId, treeId) => apiFetch(`/hospitals/${hospitalId}/decision-trees/${treeId}`, {
     method: 'DELETE',
   }),
+  // Queue Calling & Notifications
+  notifySession: (sessionId) => apiFetch(`/doctor/sessions/${sessionId}/notify`, { method: 'POST' }),
+  getHospitalNotifications: (hospitalId) => apiFetch(`/hospitals/${hospitalId}/notifications`),
+  updateHospitalNotifications: (hospitalId, data) => apiFetch(`/hospitals/${hospitalId}/notifications`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
 };

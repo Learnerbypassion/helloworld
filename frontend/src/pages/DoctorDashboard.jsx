@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History, Download, X, Copy, Check, FileCode, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { PhoneCall, Bell, Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History, Download, X, Copy, Check, FileCode, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
 
@@ -321,6 +321,31 @@ export default function DoctorDashboard() {
   const [caseModalTab, setCaseModalTab] = useState('overview'); // 'overview' | 'labs' | 'summary' | 'qa' | 'ayush' | 'fhir'
   const [copiedCaseFhir, setCopiedCaseFhir] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [notifyingId, setNotifyingId] = useState(null);
+  const [notifiedMap, setNotifiedMap] = useState({});
+
+  const handleManualNotify = async (e, q) => {
+    e.stopPropagation();
+    if (notifyingId) return;
+    setNotifyingId(q.id);
+    try {
+      const res = await api.notifySession(q.id);
+      if (res && res.ok) {
+        if (res.notified === false && res.warning) {
+          alert('Twilio Notice: ' + res.warning);
+        } else {
+          setNotifiedMap(prev => ({ ...prev, [q.id]: true }));
+          q.queue_notified = true;
+        }
+      } else {
+        alert(res?.error || 'Failed to send notification');
+      }
+    } catch (err) {
+      alert(err.message || 'Notification error: ' + err.message);
+    } finally {
+      setNotifyingId(null);
+    }
+  };
 
   const handleDownloadCaseRx = (rec) => {
     if (!rec) return;
@@ -576,14 +601,41 @@ Status: Digitally Signed & Synced to Central ABDM Registry
               {myQueue.map(q => {
                 const patient = patients.find(p => p.id === q.patientId) || { name: q.patient_name || q.name || `Patient #${q.patientId}` };
                 const isActive = activeConsultation?.id === q.id;
-                const hasRedFlags = q.intake?.redFlags?.length > 0;
+                const hasRedFlags = q.intake?.redFlags?.length > 0 || q.red_flag;
+                const isNotified = q.queue_notified || notifiedMap[q.id];
+
                 return (
                   <div key={q.id} onClick={() => startConsultation(q)}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors relative ${isActive ? 'bg-brand-50 border-brand-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                    className={`p-3.5 border rounded-xl cursor-pointer transition-all relative ${isActive ? 'bg-brand-50/90 border-brand-400 shadow-xs' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/70'}`}
                   >
-                    {hasRedFlags && <AlertTriangle className="absolute top-3 right-3 w-5 h-5 text-red-500" />}
-                    <p className={`font-bold ${isActive ? 'text-brand-900' : 'text-gray-900'}`}>{patient?.name}</p>
-                    <p className="text-sm text-gray-500 mt-1">Token: {q.token || `A-${q.id}`}</p>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className={`font-bold text-sm ${isActive ? 'text-brand-900' : 'text-gray-900'}`}>{patient?.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Token: {q.token || `A-${q.id}`}</p>
+                      </div>
+                      {hasRedFlags && <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />}
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                      {isNotified ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <PhoneCall className="w-3 h-3 text-emerald-600" /> Notified
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-400 font-medium">Waiting</span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleManualNotify(e, q)}
+                        disabled={notifyingId === q.id}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors disabled:opacity-50"
+                        title="Manually call or text this patient"
+                      >
+                        <Bell className="w-3 h-3" />
+                        {notifyingId === q.id ? 'Calling...' : 'Notify Now'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

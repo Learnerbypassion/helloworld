@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ShieldCheck, LogOut, Users, Building, Trash2, PlusCircle, Monitor,
+  PhoneCall, MessageSquare, ShieldCheck, LogOut, Users, Building, Trash2, PlusCircle, Monitor,
   Stethoscope, KeyRound, Eye, EyeOff, CheckCircle2, Lock, AlertCircle,
   Sliders, ArrowUp, ArrowDown, Layers, HelpCircle, Sparkles
 } from 'lucide-react';
@@ -93,6 +93,55 @@ export default function AdminDashboard() {
   const [isProtocolModalOpen, setIsProtocolModalOpen] = useState(false);
 
   const hospitalId = storedUser?.hospital_id || storedUser?.id || '';
+
+  // Queue Notification States
+  const [notifMode, setNotifMode] = useState('call'); // 'call' | 'sms'
+  const [notifThreshold, setNotifThreshold] = useState(1);
+  const [notifTemplate, setNotifTemplate] = useState("This is an automated call from {hospital_name}. Your consultation with Dr. {doctor_name} is next. Please proceed to the waiting area.");
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifSaving, setNotifSaving] = useState(false);
+
+  const loadNotifSettings = React.useCallback(async () => {
+    if (!hospitalId) return;
+    setNotifLoading(true);
+    try {
+      const res = await api.getHospitalNotifications(hospitalId);
+      if (res) {
+        if (res.notification_mode) setNotifMode(res.notification_mode);
+        if (res.notification_threshold) setNotifThreshold(res.notification_threshold);
+        if (res.notification_message_template) setNotifTemplate(res.notification_message_template);
+      }
+    } catch (err) {
+      console.warn("Could not load notification settings:", err);
+    } finally {
+      setNotifLoading(false);
+    }
+  }, [hospitalId]);
+
+  React.useEffect(() => {
+    if (activeTab === 'notifications') {
+      loadNotifSettings();
+    }
+  }, [activeTab, loadNotifSettings]);
+
+  const handleSaveNotifSettings = async (e) => {
+    e.preventDefault();
+    setNotifSaving(true);
+    try {
+      await api.updateHospitalNotifications(hospitalId, {
+        notification_mode: notifMode,
+        notification_threshold: Number(notifThreshold),
+        notification_message_template: notifTemplate
+      });
+      setSuccessMsg("Queue notification settings updated successfully!");
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      alert(err.message || "Failed to update notification settings");
+    } finally {
+      setNotifSaving(false);
+    }
+  };
+
 
   const loadDecisionTrees = React.useCallback(async () => {
     if (!hospitalId) return;
@@ -389,6 +438,12 @@ export default function AdminDashboard() {
           >
             <Sliders className="w-5 h-5 mr-3" /> Question Parameters
           </button>
+                    <button 
+            onClick={() => { setActiveTab('notifications'); setSuccessMsg(''); }} 
+            className={`w-full flex items-center px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'notifications' ? 'bg-brand-800 text-white shadow-sm' : 'text-brand-100 hover:bg-brand-800/50'}`}
+          >
+            <PhoneCall className="w-5 h-5 mr-3" /> Queue Notifications
+          </button>
           <button
             onClick={openKiosk}
             className="w-full flex items-center px-4 py-3 rounded-xl font-medium transition-all text-brand-100 hover:bg-brand-800/50 mt-4 border border-brand-700"
@@ -408,12 +463,10 @@ export default function AdminDashboard() {
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-gray-200 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              {activeTab === 'decision_trees' ? 'Symptom Decision Trees & Question Parameters' : 'Hospital Staff & Credential Management'}
+              {activeTab === 'notifications' ? 'Queue Calling & SMS Notification Settings' : activeTab === 'decision_trees' ? 'Symptom Decision Trees & Question Parameters' : 'Hospital Staff & Credential Management'}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              {activeTab === 'decision_trees'
-                ? 'Define hospital-specific clinical inquiry parameters for kiosk triage AI with zero-latency cached reuse'
-                : 'Configure doctor & receptionist accounts with custom initial login passwords'}
+              {activeTab === 'notifications' ? 'Configure automated phone calls and SMS fallbacks for waiting patients' : activeTab === 'decision_trees' ? 'Define hospital-specific clinical inquiry parameters for kiosk triage AI with zero-latency cached reuse' : 'Configure doctor & receptionist accounts with custom initial login passwords'}
             </p>
           </div>
           {activeTab === 'decision_trees' && (
@@ -1033,6 +1086,164 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        
+        {activeTab === 'notifications' && (
+          <div className="space-y-6 max-w-4xl">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                  <PhoneCall className="w-5 h-5 mr-2 text-brand-600" /> Automated "You're Next" Notification Protocol
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Configure automated voice calls and SMS alerts when a patient reaches the front of the doctor's queue.
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveNotifSettings} className="space-y-6">
+                {/* Channel Selector */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Primary Notification Channel *
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label className={`flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      notifMode === 'call'
+                        ? 'border-brand-600 bg-brand-50/60 shadow-xs'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="notifMode"
+                        value="call"
+                        checked={notifMode === 'call'}
+                        onChange={() => setNotifMode('call')}
+                        className="mt-1 text-brand-600 focus:ring-brand-500"
+                      />
+                      <div className="ml-3">
+                        <span className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                          <PhoneCall className="w-4 h-4 text-brand-600" /> Voice Call (Primary / Automated Call)
+                        </span>
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                          Places an automated phone call to the patient reading the message aloud in their preferred language. If the call fails, it automatically falls back to SMS.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      notifMode === 'sms'
+                        ? 'border-brand-600 bg-brand-50/60 shadow-xs'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="notifMode"
+                        value="sms"
+                        checked={notifMode === 'sms'}
+                        onChange={() => setNotifMode('sms')}
+                        className="mt-1 text-brand-600 focus:ring-brand-500"
+                      />
+                      <div className="ml-3">
+                        <span className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                          <MessageSquare className="w-4 h-4 text-brand-600" /> SMS Text Message Only
+                        </span>
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                          Dispatches an instant text message to the patient's phone without calling. Ideal for quiet clinical areas.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Queue Threshold */}
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-0.5">
+                      Queue Position Alert Threshold
+                    </label>
+                    <p className="text-xs text-gray-500">
+                      Notify the patient when they advance to this position in the doctor's queue.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={notifThreshold}
+                      onChange={e => setNotifThreshold(Number(e.target.value))}
+                      className="p-2.5 bg-white border border-gray-300 rounded-xl text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-brand-500"
+                    >
+                      <option value={1}>Position #1 (Next Patient - 0 ahead)</option>
+                      <option value={2}>Position #2 (1 patient ahead)</option>
+                      <option value={3}>Position #3 (2 patients ahead)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Message Template */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Notification Message Template *
+                    </label>
+                    <span className="text-[11px] text-gray-400">Click chips to append variables</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={notifTemplate}
+                    onChange={e => setNotifTemplate(e.target.value)}
+                    required
+                    className="w-full p-3 border border-gray-300 rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-brand-500 font-sans"
+                    placeholder="This is an automated call from {hospital_name}..."
+                  />
+
+                  {/* Insertable Tag Chips */}
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { tag: '{hospital_name}', label: 'Hospital Name' },
+                      { tag: '{doctor_name}', label: 'Doctor Name' },
+                      { tag: '{patient_name}', label: 'Patient Name' }
+                    ].map(t => (
+                      <button
+                        key={t.tag}
+                        type="button"
+                        onClick={() => {
+                          if (!notifTemplate.includes(t.tag)) {
+                            setNotifTemplate(prev => prev + ' ' + t.tag);
+                          }
+                        }}
+                        className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-mono border border-gray-200 transition"
+                      >
+                        + {t.tag} <span className="text-gray-400 font-sans">({t.label})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Live Preview Box */}
+                <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-2xl p-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-900 block mb-1">
+                    Live Simulated Preview ({notifMode === 'call' ? 'Voice Call Script' : 'SMS Text Message'}):
+                  </span>
+                  <p className="text-sm text-indigo-950 font-medium italic bg-white/80 p-3 rounded-xl border border-indigo-100">
+                    "{notifTemplate
+                      .replace(/{hospital_name}/g, storedUser?.name || 'City Care Hospital')
+                      .replace(/{doctor_name}/g, 'Dr. Aditi Sharma')
+                      .replace(/{patient_name}/g, 'Rajesh Kumar')}"
+                  </p>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={notifSaving}
+                    className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center"
+                  >
+                    {notifSaving ? 'Saving Settings...' : 'Save Notification Settings'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -23,6 +23,8 @@ const DEFAULT_SEEDS = [
   { abha_id: "66-7788-9900-1122", name: "Mohammed Aslam",  dob: "1983-06-18", age: 43, gender: "Male",   phone: "9422222222", address: "Aminabad, Lucknow, Uttar Pradesh", blood_group: "AB+" },
   { abha_id: "77-8899-0011-2233", name: "Kavita Joshi",    dob: "1999-08-07", age: 26, gender: "Female", phone: "9333333333", address: "Shivajinagar, Pune, Maharashtra", blood_group: "O+" },
   { abha_id: "88-9900-1122-3344", name: "Deepak Verma",    dob: "1956-02-14", age: 70, gender: "Male",   phone: "9244444444", address: "Model Town, Delhi", blood_group: "A+" },
+  { abha_id: "76-02991-0681-3344", name: "BITTU DEV",    dob: "2006-10-02", age: 20, gender: "Male",   phone: "6297796553", address: "Arambagh, Kolkata", blood_group: "A+" },
+  { abha_id: "76-02891-0681-3354", name: "RISHI DEV",    dob: "2005-02-08", age: 21, gender: "Male",   phone: "9088559772", address: "Rishra, Kolkata", blood_group: "A+" },
 ];
 
 async function seedDefaultPatients(Model) {

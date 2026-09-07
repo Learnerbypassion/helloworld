@@ -3,8 +3,9 @@
  * and Doctor Review (MongoDB / Mongoose).
  */
 const express = require("express");
-const { IntakeSession, Patient, Document } = require("../db");
+const { IntakeSession, Patient, Document, Doctor, Hospital } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
+const { notifyPatient } = require("../callAgent");
 
 const router = express.Router();
 
@@ -102,6 +103,7 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
         red_flag: !!s.red_flag,
         red_flag_reason: s.red_flag_reason,
         ayush_mode: !!s.ayush_mode,
+        queue_notified: !!s.queue_notified,
         submitted_at: s.submitted_at,
         language: p.language || "English",
         dob: p.dob,
@@ -161,6 +163,88 @@ router.get("/patients/:patientId/medications", requireAuth, requireRole("doctor"
   }
 });
 
+
+/**
+ * Automatically evaluates a doctor's waiting queue and notifies the next patient in line.
+ * Implements atomic claim to eliminate race conditions and regression reset for priority shifts.
+ */
+async function checkAndNotifyNextInQueue(doctorId, hospitalId) {
+  try {
+    if (!doctorId) return;
+
+    // 1. Fetch hospital configuration (mode, threshold, template)
+    let threshold = 1;
+    let template = "This is an automated call from {hospital_name}. Your consultation with Dr. {doctor_name} is next. Please proceed to the waiting area.";
+    let notifMode = "call";
+    let hospitalName = "the hospital";
+
+    if (hospitalId) {
+      const hosp = await Hospital.findById(hospitalId).catch(() => null);
+      if (hosp) {
+        threshold = hosp.notification_threshold || 1;
+        notifMode = hosp.notification_mode || "call";
+        template = hosp.notification_message_template || template;
+        hospitalName = hosp.name || hospitalName;
+      }
+    }
+
+    // 2. Query waiting sessions assigned to this doctor, ordered by triage priority then arrival
+    const waiting = await IntakeSession.find({
+      status: "submitted",
+      doctor_id: doctorId
+    }).sort({ red_flag: -1, submitted_at: 1 });
+
+    if (!waiting || waiting.length === 0) return;
+
+    // 3. Fetch doctor profile for name substitution
+    const doc = await Doctor.findById(doctorId).catch(() => null);
+    const doctorName = doc ? doc.name : "your doctor";
+
+    // 4. Check candidates within threshold (e.g. index 0 for threshold = 1)
+    for (let i = 0; i < Math.min(threshold, waiting.length); i++) {
+      const candidate = waiting[i];
+      if (!candidate.queue_notified) {
+        // Atomic claim: only one process wins the right to notify
+        const claimed = await IntakeSession.findOneAndUpdate(
+          { _id: candidate._id, queue_notified: { $ne: true } },
+          { $set: { queue_notified: true } },
+          { new: true }
+        );
+
+        if (claimed) {
+          const patient = await Patient.findById(candidate.patient_id).catch(() => null);
+          if (patient && patient.phone) {
+            const msg = template
+              .replace(/{hospital_name}/g, hospitalName)
+              .replace(/{doctor_name}/g, doctorName)
+              .replace(/{patient_name}/g, patient.name || "Patient");
+
+            console.log(`[callAgent] Patient ${patient.name} reached queue position #${i + 1} for Dr. ${doctorName}. Dispatching notification...`);
+            notifyPatient(patient.phone, msg, {
+              mode: notifMode,
+              language: patient.language || "English"
+            }).catch(err => {
+              console.error("[callAgent] Notification dispatch error:", err.message);
+            });
+          }
+        }
+      }
+    }
+
+    // 5. Queue Regression Reset:
+    // If an emergency red-flag session was inserted ahead, a session previously notified might be bumped
+    // back beyond threshold. Reset queue_notified so they receive a fresh call when they reach threshold again.
+    for (let j = threshold; j < waiting.length; j++) {
+      if (waiting[j].queue_notified) {
+        console.log(`[callAgent] Session ${waiting[j]._id} regressed to position #${j + 1}. Resetting queue_notified for next cycle.`);
+        await IntakeSession.findByIdAndUpdate(waiting[j]._id, { $set: { queue_notified: false } });
+      }
+    }
+  } catch (err) {
+    console.error("[callAgent] checkAndNotifyNextInQueue error:", err.message);
+  }
+}
+
 // ---------- Doctor Review: Profile | Reports | Diagnosis | Case | Prescribing ----------
 router.post("/sessions/:id/review", requireAuth, requireRole("doctor"), async (req, res) => {
   try {
@@ -191,6 +275,13 @@ router.post("/sessions/:id/review", requireAuth, requireRole("doctor"), async (r
     if (prescription !== undefined) updates.prescription = prescription;
 
     await IntakeSession.findByIdAndUpdate(s.id, updates);
+
+    // Re-evaluate queue for this doctor asynchronously and notify next patient in line
+    const reviewingDocId = req.user.id || req.user._id || s.doctor_id;
+    const reviewingHospId = req.user.hospital_id || s.hospital_id;
+    checkAndNotifyNextInQueue(reviewingDocId, reviewingHospId).catch(e => {
+      console.warn("[callAgent] Queue notification trigger notice:", e.message);
+    });
 
     // Push to Central Mock ABHA Platform (Awaited with timeout for verified sync status!)
     let abhaSynced = false;
@@ -341,6 +432,66 @@ router.get("/abha-records/:abhaId", requireAuth, requireRole("doctor", "hospital
     res.json(abhaResp.data);
   } catch (err) {
     res.json({ abha_id: req.params.abhaId, count: 0, records: [], error: err.message });
+  }
+});
+
+
+// ---------- Manual Patient Queue Notification / Nudge Override ----------
+router.post("/sessions/:id/notify", requireAuth, requireRole("doctor", "hospital_admin"), async (req, res) => {
+  try {
+    const session = await IntakeSession.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const patient = await Patient.findById(session.patient_id);
+    if (!patient || !patient.phone) {
+      return res.status(400).json({ error: "Patient phone number is missing" });
+    }
+
+    const docId = session.doctor_id || req.user.id || req.user._id;
+    const doc = await Doctor.findById(docId).catch(() => null);
+    const hospId = session.hospital_id || req.user.hospital_id;
+    const hosp = await Hospital.findById(hospId).catch(() => null);
+
+    const template = hosp?.notification_message_template ||
+      "This is an automated call from {hospital_name}. Your consultation with Dr. {doctor_name} is next. Please proceed to the waiting area.";
+    const hospitalName = hosp?.name || "the hospital";
+    const doctorName = doc?.name || req.user.name || "your doctor";
+
+    const msg = template
+      .replace(/{hospital_name}/g, hospitalName)
+      .replace(/{doctor_name}/g, doctorName)
+      .replace(/{patient_name}/g, patient.name || "Patient");
+
+    const mode = hosp?.notification_mode || "call";
+    const result = await notifyPatient(patient.phone, msg, {
+      mode,
+      language: patient.language || "English"
+    });
+
+    if (result && result.success === false) {
+      return res.json({
+        ok: true,
+        notified: false,
+        warning: result.error || "Call could not connect. On Twilio trial accounts, the recipient number must be added to Verified Caller IDs in Twilio Console.",
+        result,
+        patient_phone: patient.phone.slice(-4),
+        message: msg
+      });
+    }
+
+    await IntakeSession.findByIdAndUpdate(session._id, { $set: { queue_notified: true } });
+
+    return res.json({
+      ok: true,
+      result,
+      notified: true,
+      mode,
+      patient_phone: patient.phone.slice(-4),
+      message: msg
+    });
+  } catch (err) {
+    console.error("[doctor] Manual notification error:", err);
+    return res.status(500).json({ error: err.message || "Failed to notify patient" });
   }
 });
 

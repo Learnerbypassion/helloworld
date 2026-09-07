@@ -43,6 +43,12 @@ const HospitalSchema = new mongoose.Schema(
     address: { type: String },
     hfr_id: { type: String },
     password_hash: { type: String, required: true },
+    notification_mode: { type: String, enum: ["call", "sms"], default: "call" },
+    notification_threshold: { type: Number, default: 1, min: 1, max: 10 },
+    notification_message_template: {
+      type: String,
+      default: "This is an automated call from {hospital_name}. Your consultation with Dr. {doctor_name} is next. Please proceed to the waiting area."
+    },
   },
   schemaOptions
 );
@@ -131,6 +137,7 @@ const IntakeSessionSchema = new mongoose.Schema(
     recommended_doctor_id: { type: mongoose.Schema.Types.Mixed, ref: "Doctor" },
     hospital_id: { type: mongoose.Schema.Types.Mixed, ref: "Hospital" },
     kiosk_id: { type: String, default: "KIOSK-01" },
+    queue_notified: { type: Boolean, default: false },
   },
   schemaOptions
 );

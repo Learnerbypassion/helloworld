@@ -15,6 +15,7 @@ const fs      = require("fs");
 require("./db");
 
 const { printStartupWarning } = require("./otpService");
+const { printCallAgentStartupWarning } = require("./callAgent");
 
 const authRoutes    = require("./routes/auth");
 const patientRoutes = require("./routes/patients");
@@ -23,6 +24,7 @@ const doctorRoutes  = require("./routes/doctor");
 const ayushRoutes   = require("./routes/ayush");
 const bhasiniRoutes = require("./routes/bhasini");
 const decisionTreeRoutes = require("./routes/decisionTree");
+const hospitalSettingsRoutes = require("./routes/hospitalSettings");
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -39,6 +41,7 @@ app.use("/api/doctor",   doctorRoutes);
 app.use("/api/ayush",    ayushRoutes);
 app.use("/api/bhasini",   bhasiniRoutes);
 app.use("/api/hospitals", decisionTreeRoutes);
+app.use("/api/hospitals", hospitalSettingsRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "MediKiosk API (Node.js)" });
@@ -53,4 +56,7 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`MediKiosk API listening on http://localhost:${PORT}`);
   printStartupWarning();
+  printCallAgentStartupWarning();
 });
+
+// Reload trigger: 1788785277666
