@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History, Download, X, Copy, Check, FileCode, ChevronRight } from 'lucide-react';
+import { Stethoscope, LogOut, ClipboardList, CheckCircle, AlertTriangle, FileCode2, FileUp, Languages, Sparkles, RefreshCw, Clock, ShieldAlert, Microscope, Pill, Activity, Eye, FileText, Building2, History, Download, X, Copy, Check, FileCode, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { useGlobal } from '../context/GlobalContext';
 import { api } from '../services/api';
 
@@ -320,6 +320,7 @@ export default function DoctorDashboard() {
   const [selectedCaseModal, setSelectedCaseModal] = useState(null);
   const [caseModalTab, setCaseModalTab] = useState('overview'); // 'overview' | 'labs' | 'summary' | 'qa' | 'ayush' | 'fhir'
   const [copiedCaseFhir, setCopiedCaseFhir] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   const handleDownloadCaseRx = (rec) => {
     if (!rec) return;
@@ -376,15 +377,75 @@ Status: Digitally Signed & Synced to Central ABDM Registry
     try {
       const pid = qItem.patientId || qItem.patient_id;
       const abhaId = qItem.abha_id;
-      let res = null;
+      let records = [];
+
+      // 1. Fetch from Central ABHA if patient has an ABHA ID
+      if (abhaId) {
+        try {
+          const directRes = await api.getAbhaRecordsDirect(abhaId);
+          if (directRes && Array.isArray(directRes.records) && directRes.records.length > 0) {
+            records = directRes.records.map(r => ({
+              ...r,
+              abha_id: r.abha_id || directRes.abha_id || abhaId
+            }));
+          }
+        } catch (e) {
+          console.warn("Direct ABHA fetch notice:", e.message);
+        }
+      }
+
+      // 2. If no direct ABHA records yet, try through backend doctor patient ABHA route
+      if (records.length === 0 && pid) {
+        try {
+          const res = await api.getAbhaHistory(pid);
+          if (res && Array.isArray(res.records) && res.records.length > 0) {
+            records = res.records.map(r => ({
+              ...r,
+              abha_id: r.abha_id || res.abha_id || abhaId
+            }));
+          }
+        } catch (e) {
+          console.warn("Backend ABHA history notice:", e.message);
+        }
+      }
+
+      // 3. Also load local hospital previous sessions for this patient (excluding active session)
       if (pid) {
-        res = await api.getAbhaHistory(pid);
+        try {
+          const localSessions = await api.getPatientSessions(pid);
+          if (Array.isArray(localSessions)) {
+            const pastLocal = localSessions
+              .filter(s => s.status === 'reviewed' && s.session_id !== qItem.id && s.id !== qItem.id)
+              .map(s => ({
+                record_id: `LOCAL_${s.session_id || s.id}`,
+                session_id: s.session_id || s.id,
+                hospital_name: s.hospital_name || 'testHospital medical college',
+                doctor_name: s.doctor_name || 'Attending Physician',
+                doctor_specialization: s.doctor_specialization || 'General Medicine',
+                date: s.reviewed_at || s.submitted_at || s.created_at,
+                chief_complaint: s.chief_complaint,
+                diagnosis: s.diagnosis,
+                prescription: s.prescription,
+                ai_summary: s.summary,
+                lab_reports: s.lab_reports || [],
+                ayush_mode: s.ayush_mode,
+                abha_id: abhaId,
+                is_local_hospital: true,
+              }));
+
+            for (const ls of pastLocal) {
+              if (!records.some(r => r.session_id && r.session_id === ls.session_id)) {
+                records.push(ls);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Local sessions notice:", e.message);
+        }
       }
-      if ((!res || !res.records || res.records.length === 0) && abhaId && abhaId !== '12-3456-7890-1234') {
-        res = await api.getAbhaRecordsDirect(abhaId);
-      }
-      // Strictly scope records to this patient's ABHA ID (prevent any cross-patient record leaks)
-      const records = (res?.records || []).filter(r => !abhaId || r.abha_id === abhaId || r.session_id === qItem.id);
+
+      // Sort chronological descending
+      records.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setAbhaHistory(records);
     } catch (err) {
       console.warn("Failed to load patient history:", err);
@@ -396,6 +457,7 @@ Status: Digitally Signed & Synced to Central ABDM Registry
 
   const startConsultation = async (qItem) => {
     setActiveConsultation(qItem);
+    setShowAllHistory(false);
     setSymptoms(qItem.intake?.hpi || '');
     setPrescription('');
     setShowFhir(false);
@@ -656,17 +718,43 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                         </div>
                       ) : abhaHistory.length > 0 ? (
                         <div className="space-y-3">
-                          <p className="text-xs text-gray-600 font-medium">
-                            Found <strong>{abhaHistory.length}</strong> previous hospital encounter(s) in Central Health Database:
-                          </p>
-                          {abhaHistory.map((rec, i) => (
+                          {/* Header Summary & View Mode Controller */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+                            <p className="text-xs text-gray-600 font-medium flex items-center gap-1.5">
+                              <span>Found <strong>{abhaHistory.length}</strong> previous encounter(s)</span>
+                              <span className="text-gray-400">•</span>
+                              <span className="text-gray-500">{showAllHistory ? 'Showing all' : 'Showing latest encounter (uncluttered view)'}</span>
+                            </p>
+                            {abhaHistory.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setShowAllHistory(prev => !prev)}
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 px-3 py-1 rounded-lg transition-all"
+                              >
+                                {showAllHistory ? (
+                                  <>
+                                    <ChevronUp className="w-3.5 h-3.5" />
+                                    <span>Collapse View</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                    <span>Show All ({abhaHistory.length})</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Records List (Render 1 by default, or all if expanded) */}
+                          {(showAllHistory ? abhaHistory : abhaHistory.slice(0, 1)).map((rec, i) => (
                             <div 
                               key={rec.record_id || i} 
                               onClick={() => { setSelectedCaseModal(rec); setCaseModalTab('overview'); }}
-                              className="p-4 bg-white hover:bg-indigo-50/40 rounded-2xl border-2 border-slate-200 hover:border-indigo-400 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-3 group relative"
+                              className="p-3.5 bg-white hover:bg-indigo-50/40 rounded-xl border-2 border-slate-200 hover:border-indigo-400 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-2.5 group relative"
                               title="Click to view total case history, medical records, case reports, and test history"
                             >
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs pb-2 border-b border-gray-100">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs pb-1.5 border-b border-gray-100">
                                 <div className="flex items-center space-x-2">
                                   <span className="font-bold text-blue-900 flex items-center">
                                     🏥 {rec.hospital_name || 'testHospital medical college'}
@@ -689,30 +777,30 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                                 </span>
                               </div>
 
-                              <div className="grid sm:grid-cols-12 gap-3 text-xs">
+                              <div className="grid sm:grid-cols-12 gap-2 text-xs">
                                 <div className="sm:col-span-6 space-y-1">
                                   <p><strong className="text-gray-900">Treating Doctor:</strong> {rec.doctor_name} ({rec.doctor_specialization || 'Physician'})</p>
-                                  <div className="flex items-center space-x-1.5 mt-1">
+                                  <div className="flex items-center space-x-1.5 mt-0.5">
                                     <strong className="text-gray-900">Diagnosis:</strong>
-                                    <span className="text-emerald-900 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                                    <span className="text-emerald-900 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px] truncate">
                                       {rec.diagnosis}
                                     </span>
                                   </div>
                                   {rec.chief_complaint && (
-                                    <p className="text-gray-600 mt-1"><strong>Symptoms:</strong> {rec.chief_complaint}</p>
+                                    <p className="text-gray-600 mt-0.5 line-clamp-1"><strong>Symptoms:</strong> {rec.chief_complaint}</p>
                                   )}
                                 </div>
 
-                                <div className="sm:col-span-6 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                                  <span className="font-bold text-slate-800 block mb-0.5">Prescription &amp; Rx:</span>
+                                <div className="sm:col-span-6 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                  <span className="font-bold text-slate-800 block mb-0.5 text-[11px]">Prescription &amp; Rx:</span>
                                   <p className="text-gray-800 font-mono text-[11px] whitespace-pre-wrap line-clamp-2">{rec.prescription}</p>
                                 </div>
                               </div>
 
                               {/* Lab Test Indicator */}
                               {rec.lab_reports && rec.lab_reports.some(lr => lr.labs && lr.labs.length > 0) && (
-                                <div className="bg-purple-50/70 p-2.5 rounded-xl border border-purple-200/80 flex items-center justify-between text-xs">
-                                  <span className="font-bold text-purple-900 flex items-center">
+                                <div className="bg-purple-50/70 p-2 rounded-lg border border-purple-200/80 flex items-center justify-between text-xs">
+                                  <span className="font-bold text-purple-900 flex items-center text-[11px]">
                                     <Microscope className="w-3.5 h-3.5 mr-1.5 text-purple-700" />
                                     Diagnostic Lab Panel ({rec.lab_reports.reduce((acc, lr) => acc + (lr.labs?.length || 0), 0) || 10} Parameters Evaluated)
                                   </span>
@@ -723,17 +811,40 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                               )}
 
                               {/* Clickable Action Banner */}
-                              <div className="pt-2 flex items-center justify-between text-xs text-indigo-700 font-bold group-hover:text-indigo-900 border-t border-gray-100">
-                                <span className="flex items-center">
+                              <div className="pt-1.5 flex items-center justify-between text-xs text-indigo-700 font-bold group-hover:text-indigo-900 border-t border-gray-100">
+                                <span className="flex items-center text-[11px]">
                                   <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                                  Click to Inspect Total Case History, Medical Records &amp; Lab Tests
+                                  Inspect Case History, Records &amp; Labs
                                 </span>
-                                <span className="inline-flex items-center text-indigo-600 group-hover:translate-x-1 transition-transform">
-                                  Open Case <ChevronRight className="w-4 h-4 ml-0.5" />
+                                <span className="inline-flex items-center text-indigo-600 group-hover:translate-x-1 transition-transform text-[11px]">
+                                  Open Case <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
                                 </span>
                               </div>
                             </div>
                           ))}
+
+                          {/* See More / Show All Action Button */}
+                          {!showAllHistory && abhaHistory.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllHistory(true)}
+                              className="w-full py-2.5 px-4 rounded-xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 font-bold text-xs transition-all flex items-center justify-center gap-2 group shadow-2xs hover:shadow-xs"
+                            >
+                              <span>See More: Show All {abhaHistory.length} Previous Encounters (+{abhaHistory.length - 1} older record{abhaHistory.length - 1 > 1 ? 's' : ''})</span>
+                              <ChevronDown className="w-4 h-4 text-indigo-600 group-hover:translate-y-0.5 transition-transform" />
+                            </button>
+                          )}
+
+                          {showAllHistory && abhaHistory.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllHistory(false)}
+                              className="w-full py-2 px-4 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <span>Show Less (Collapse View)</span>
+                              <ChevronUp className="w-3.5 h-3.5 text-gray-500" />
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="py-3 px-4 bg-gray-50 rounded-lg text-xs text-gray-500 flex items-center justify-between">
