@@ -80,8 +80,8 @@ export default function ReceptionistDashboard() {
       {/* Sidebar */}
       <div className="w-64 bg-brand-900 text-white flex flex-col">
         <div className="p-6 flex items-center border-b border-brand-800">
-          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-8 h-8 mr-3 drop-shadow-md" />
-          <span className="text-lg font-bold">PurvArogya</span>
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-9 h-9 mr-3 drop-shadow-md rounded-xl object-contain bg-white p-1" />
+          <span className="text-lg font-bold">Dhanvantri</span>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setActiveTab('queue')} className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${activeTab === 'queue' ? 'bg-brand-800' : 'hover:bg-brand-800/50'}`}>

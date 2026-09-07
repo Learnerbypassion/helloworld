@@ -413,9 +413,9 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <div className="w-64 bg-brand-900 text-white flex flex-col shadow-xl">
         <div className="p-6 flex items-center border-b border-brand-800">
-          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-8 h-8 mr-3 drop-shadow-md" />
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-9 h-9 mr-3 drop-shadow-md rounded-xl object-contain bg-white p-1" />
           <div>
-            <span className="text-lg font-bold block leading-tight">PurvArogya</span>
+            <span className="text-lg font-bold block leading-tight">Dhanvantri</span>
             <span className="text-xs text-brand-300">Hospital Administration</span>
           </div>
         </div>

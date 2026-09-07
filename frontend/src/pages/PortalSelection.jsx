@@ -19,13 +19,11 @@ export default function PortalSelection() {
           <div className="flex justify-center mb-4">
             <img
               src={`${import.meta.env.BASE_URL}logo.svg`}
-              alt="PurvArogya Logo"
-              className="w-20 h-20 drop-shadow-xl"
+              alt="Dhanvantri Logo"
+              className="w-24 h-24 drop-shadow-xl rounded-2xl object-contain bg-white p-2 shadow-lg"
             />
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-2 tracking-tight">
-            PurvArogya
-          </h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-2 tracking-tight">Dhanvantri</h1>
           <p className="text-xl text-brand-700 font-semibold mb-4">
             The Future of Clinical History & Case-Taking
           </p>

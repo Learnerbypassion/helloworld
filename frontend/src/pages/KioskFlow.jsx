@@ -854,10 +854,10 @@ export default function KioskFlow() {
 
         <div className="bg-brand-900 text-white p-5 flex justify-between items-center shrink-0">
           <div className="flex items-center">
-            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-10 h-10 mr-3 drop-shadow-md" />
+            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-11 h-11 mr-3 drop-shadow-md rounded-xl object-contain bg-white p-1" />
             <div>
               <h1 className="text-xl font-bold flex items-center space-x-2">
-                <span>PurvArogya</span>
+                <span>Dhanvantri</span>
                 <span className="text-xs bg-brand-700 font-mono text-brand-100 px-2.5 py-0.5 rounded-full border border-brand-600">
                   {kioskId || 'KIOSK-01'}
                 </span>

@@ -60,7 +60,7 @@ const BHASINI_LANG_CODE = {
 
 // Voice speakers for Bulbul v3
 const SARVAM_VOICE_BY_LANG = {
-  "bn-IN": "roopa",
+  "bn-IN": "suhani",
   "hi-IN": "roopa",
   "ta-IN": "gokul",
   "te-IN": "kavitha",

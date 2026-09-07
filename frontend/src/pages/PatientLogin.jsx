@@ -67,9 +67,9 @@ export default function PatientLogin() {
         {/* Header */}
         <div className="bg-brand-900 px-8 py-8 text-white text-center">
           <div className="inline-flex justify-center mb-4">
-            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-16 h-16 drop-shadow-md" />
+            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-20 h-20 drop-shadow-md rounded-2xl object-contain bg-white p-2 shadow-md" />
           </div>
-          <h2 className="text-2xl font-semibold">PurvArogya Patient Portal</h2>
+          <h2 className="text-2xl font-semibold">Dhanvantri Patient Portal</h2>
           <p className="text-brand-100 mt-2 text-sm">Access your medical history securely</p>
         </div>
 

@@ -150,12 +150,12 @@ export default function PatientDashboard() {
 
   const handleDownloadRx = (rec) => {
     const rxContent = `=============================================================
-PURVAROGYA NATIONAL DIGITAL HEALTH ECOSYSTEM
+DHANVANTRI NATIONAL DIGITAL HEALTH ECOSYSTEM
 AYUSHMAN BHARAT DIGITAL MISSION (ABDM) CLINICAL PRESCRIPTION
 =============================================================
 Record ID:      ${rec.record_id || 'REC_ABDM'}
 Date & Time:    ${rec.date ? new Date(rec.date).toLocaleString('en-IN') : 'N/A'}
-Hospital:       ${rec.hospital_name || 'PurvArogya Medical Center'}
+Hospital:       ${rec.hospital_name || 'Dhanvantri Medical Center'}
 Attending Dr:   ${rec.doctor_name || 'Attending Physician'} (${rec.doctor_specialization || 'General Medicine'})
 Discipline:     ${rec.ayush_mode ? 'AYUSH / Ayurvedic Medicine' : 'Allopathic / Modern Medicine'}
 
@@ -296,11 +296,11 @@ Standard:        FHIR R4 / HL7 Clinical Document Architecture
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between py-3">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center p-1.5 backdrop-blur-sm border border-white/20">
-              <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="PurvArogya" className="w-full h-full drop-shadow" />
+              <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-full h-full object-contain drop-shadow" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="text-xl font-black tracking-tight text-white">PurvArogya</span>
+                <span className="text-xl font-black tracking-tight text-white">Dhanvantri</span>
                 <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-400/30 uppercase tracking-wide">
                   ABDM Patient Portal
                 </span>
