@@ -196,7 +196,7 @@ router.post("/sessions/:id/review", requireAuth, requireRole("doctor"), async (r
     let abhaSynced = false;
     let abhaRecordId = null;
     let abhaError = null;
-    const targetAbhaId = patient?.abha_id || (patient?.phone ? `91-${patient.phone.slice(-4)}-${s.id.slice(-4)}-${Date.now().toString().slice(-4)}` : "12-3456-7890-1234");
+    const targetAbhaId = patient?.abha_id || (patient?.phone ? `91-${patient.phone.slice(-4)}-${s.id.slice(-4)}-${Date.now().toString().slice(-4)}` : null);
 
     try {
       const axios = require("axios");

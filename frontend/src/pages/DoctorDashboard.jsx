@@ -337,7 +337,7 @@ System / Stream:  ${rec.ayush_mode ? 'AYUSH (Ayurveda)' : 'Allopathy (Modern Med
 PATIENT DEMOGRAPHICS
 -------------------------------------------------------------
 Patient Name:     ${activeConsultation?.patient?.name || activeConsultation?.name || 'Rajesh Kumar'}
-ABHA ID:          ${activeConsultation?.patient?.abha_id || activeConsultation?.abha_id || '12-3456-7890-1234'}
+ABHA ID:          ${activeConsultation?.patient?.abha_id || activeConsultation?.abha_id || 'Not Linked'}
 
 -------------------------------------------------------------
 CLINICAL DIAGNOSIS & CHIEF COMPLAINTS
@@ -372,18 +372,22 @@ Status: Digitally Signed & Synced to Central ABDM Registry
   const fetchAbhaHistory = async (qItem) => {
     if (!qItem) return;
     setLoadingAbha(true);
+    setAbhaHistory([]);
     try {
       const pid = qItem.patientId || qItem.patient_id;
+      const abhaId = qItem.abha_id;
       let res = null;
       if (pid) {
         res = await api.getAbhaHistory(pid);
       }
-      if ((!res || !res.records || res.records.length === 0) && qItem.abha_id) {
-        res = await api.getAbhaRecordsDirect(qItem.abha_id);
+      if ((!res || !res.records || res.records.length === 0) && abhaId && abhaId !== '12-3456-7890-1234') {
+        res = await api.getAbhaRecordsDirect(abhaId);
       }
-      setAbhaHistory(res?.records || []);
+      // Strictly scope records to this patient's ABHA ID (prevent any cross-patient record leaks)
+      const records = (res?.records || []).filter(r => !abhaId || r.abha_id === abhaId || r.session_id === qItem.id);
+      setAbhaHistory(records);
     } catch (err) {
-      console.warn("Failed to load ABHA history:", err);
+      console.warn("Failed to load patient history:", err);
       setAbhaHistory([]);
     } finally {
       setLoadingAbha(false);
@@ -612,7 +616,7 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                       )}
                     </div>
 
-                    {/* Universal ABHA Health Records (Cross-Hospital History) */}
+                    {/* Patient Medical History & ABHA Records (Strictly Scoped to Current Queue Patient) */}
                     <div className="bg-white p-5 rounded-xl border border-blue-200 shadow-sm">
                       <div className="flex justify-between items-center mb-3 border-b pb-2">
                         <div className="flex items-center space-x-2">
@@ -621,13 +625,17 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                           </span>
                           <div>
                             <h3 className="font-bold text-gray-900 text-base flex items-center">
-                              Universal ABHA Health Records
+                              Patient Medical History &amp; ABHA Records
                               <span className="ml-2 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-semibold">
-                                ABDM Central Network
+                                {activeConsultation.name || activeConsultation.patient_name || 'Current Patient'}
                               </span>
                             </h3>
                             <p className="text-xs text-gray-500">
-                              Patient ABHA ID: <span className="font-mono font-semibold text-gray-700">{activeConsultation.abha_id || patient.abha_id || '12-3456-7890-1234'}</span>
+                              Patient ABHA ID: {activeConsultation.abha_id ? (
+                                <span className="font-mono font-semibold text-gray-700">{activeConsultation.abha_id}</span>
+                              ) : (
+                                <span className="text-gray-400 italic">Not Linked (New / Walk-in Citizen)</span>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -638,13 +646,13 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                           className="text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition font-medium flex items-center"
                         >
                           <RefreshCw className={`w-3 h-3 mr-1 ${loadingAbha ? 'animate-spin' : ''}`} />
-                          {loadingAbha ? 'Refreshing...' : 'Refresh Central'}
+                          {loadingAbha ? 'Refreshing...' : 'Refresh History'}
                         </button>
                       </div>
 
                       {loadingAbha ? (
                         <div className="py-4 text-center text-xs text-gray-500 animate-pulse">
-                          Fetching longitudinal health records from Central ABHA Server (Port 8005)...
+                          Fetching health records for {activeConsultation.name || 'patient'} from Central ABHA Server...
                         </div>
                       ) : abhaHistory.length > 0 ? (
                         <div className="space-y-3">

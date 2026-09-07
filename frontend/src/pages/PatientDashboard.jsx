@@ -79,7 +79,7 @@ export default function PatientDashboard() {
   }, [myPatientId]);
 
   // Determine active ABHA ID (profile abha_id, or fallback demo ID)
-  const activeAbhaId = patient?.abha_id || patient?.abhaId || stored?.abha_id || '12-3456-7890-1234';
+  const activeAbhaId = patient?.abha_id || patient?.abhaId || stored?.abha_id || null;
 
   // Fetch Central ABHA Records
   const fetchAbhaRecords = async (targetId) => {

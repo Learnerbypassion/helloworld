@@ -433,7 +433,7 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
       if (abha_demographics?.age && !patient.age) updates.age = abha_demographics.age;
       if (abha_demographics?.gender && !patient.gender) updates.gender = abha_demographics.gender;
       if (abha_demographics?.address && !patient.address) updates.address = abha_demographics.address;
-      if (abha_id && !patient.abha_id) updates.abha_id = abha_id;
+      if ((abha_id || abha_demographics?.abha_id) && (!patient.abha_id || patient.abha_id === "12-3456-7890-1234")) updates.abha_id = abha_id || abha_demographics?.abha_id;
       // Adopt patient to this kiosk's hospital for this visit!
       if (assignedHospId && assignedHospId !== "default") updates.hospital_id = assignedHospId;
       if (Object.keys(updates).length > 0) {
@@ -442,7 +442,7 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
     } else {
       // New walk-in kiosk patient
       const cleanPhone = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "9876543210";
-      const abhaVal = abha_id || "12-3456-7890-1234";
+      const abhaVal = abha_id || abha_demographics?.abha_id || null;
       patient = await Patient.create({
         hospital_id: assignedHospId,
         name: abha_demographics?.name || "Self-Service Patient",
