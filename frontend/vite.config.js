@@ -7,5 +7,5 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
-  base: '/PurvArogya/',
+  base: '/dhanvantari/',
 })

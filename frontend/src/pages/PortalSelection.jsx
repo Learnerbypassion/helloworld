@@ -27,7 +27,6 @@ export default function PortalSelection() {
           <p className="text-xl text-brand-700 font-semibold mb-4">
             The Future of Clinical History & Case-Taking
           </p>
-          <p className="text-sm text-gray-500">ABDM & DPDP Compliant • FHIR R4 Ready</p>
         </motion.div>
 
         {/* Selection Cards */}

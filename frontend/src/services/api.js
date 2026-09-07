@@ -1,5 +1,5 @@
 /**
- * PurvArogya / MediKiosk API client
+ * Dhanvantri / MediKiosk API client
  * Interacts with the Express/MongoDB backend.
  */
 
