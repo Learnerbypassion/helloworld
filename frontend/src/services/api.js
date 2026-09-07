@@ -152,4 +152,14 @@ export const api = {
 
   // Bhasini status
   bhasiniStatus: () => apiFetch('/bhasini/status'),
+
+  // Hospital Decision Trees
+  getDecisionTrees: (hospitalId) => apiFetch(`/hospitals/${hospitalId}/decision-trees`),
+  saveDecisionTree: (hospitalId, data) => apiFetch(`/hospitals/${hospitalId}/decision-trees`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  deleteDecisionTree: (hospitalId, treeId) => apiFetch(`/hospitals/${hospitalId}/decision-trees/${treeId}`, {
+    method: 'DELETE',
+  }),
 };

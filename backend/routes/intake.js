@@ -352,13 +352,13 @@ router.get("/:id", requireAuth, async (req, res) => {
 });
 
 
-// ---------- Clinical HPI follow-up questions (Hybrid AI + Database) ----------
+// ---------- Clinical HPI follow-up questions (Decision Tree + Hybrid AI + Caching) ----------
 router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
   try {
     const s = await sessionOr404(req.params.id, res);
     if (!s) return;
 
-    const { ClinicalQuestion } = require("../db");
+    const { ClinicalQuestion, SymptomDecisionTree } = require("../db");
     const { generateHpiQuestions } = require("../summarizer");
 
     const sessionObj = s.toObject();
@@ -366,6 +366,7 @@ router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
     const sid = (sessionObj.symptom_id || "").toLowerCase();
     const transcript = (sessionObj.transcript || "").trim();
     const forceAi = req.body?.force_ai === true;
+    const hospital_id = sessionObj.hospital_id ? sessionObj.hospital_id.toString() : (req.user?.hospital_id || null);
 
     let matchedStandardKey = null;
     if (sid.includes("fever") || cc.includes("fever") || cc.includes("জ্বর") || cc.includes("बुखार")) {
@@ -378,23 +379,184 @@ router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
       matchedStandardKey = "chest";
     } else if (sid.includes("headache") || cc.includes("headache") || cc.includes("মাথা") || cc.includes("सिर")) {
       matchedStandardKey = "headache";
+    } else if (sid.includes("vomit") || cc.includes("vomit") || cc.includes("বমি") || cc.includes("उल्टी")) {
+      matchedStandardKey = "vomiting";
+    } else if (sid.includes("joint") || cc.includes("joint") || cc.includes("হাঁটু") || cc.includes("जोड़ों")) {
+      matchedStandardKey = "joint_pain";
+    } else if (sid.includes("skin") || cc.includes("skin") || cc.includes("চামড়া") || cc.includes("त्वचा")) {
+      matchedStandardKey = "skin";
+    } else if (sid.includes("urinary") || cc.includes("urine") || cc.includes("পেচ্ছাপ") || cc.includes("पेशाब")) {
+      matchedStandardKey = "urinary";
+    } else if (sid.includes("eye") || cc.includes("eye") || cc.includes("চোখ") || cc.includes("आंख")) {
+      matchedStandardKey = "eye";
+    } else if (sid.includes("breath") || cc.includes("breath") || cc.includes("শ্বাস") || cc.includes("सांस")) {
+      matchedStandardKey = "breathless";
+    } else if (sid.includes("weak") || cc.includes("fatigue") || cc.includes("দুর্বল") || cc.includes("कमजोरी")) {
+      matchedStandardKey = "weakness";
     }
 
-    // Hybrid Decision: If patient provided voice transcript OR new/custom disease OR multiple symptoms -> USE AI!
+    const effectiveSymptomKey = matchedStandardKey || sid || "general";
+
+    // 1. Check if the hospital has a configured SymptomDecisionTree for this symptom
+    let tree = null;
+    if (hospital_id) {
+      tree = await SymptomDecisionTree.findOne({
+        hospital_id,
+        symptom_key: effectiveSymptomKey,
+        active: true
+      });
+      if (!tree && matchedStandardKey && sid && sid !== matchedStandardKey) {
+        tree = await SymptomDecisionTree.findOne({
+          hospital_id,
+          symptom_key: sid,
+          active: true
+        });
+      }
+    }
+
+    // 2. Evaluate complexity: voice description, multi-symptom complaint, novel disease, or forced AI
     const hasVoiceDetails = transcript.length > 5;
     const isMultiSymptom = cc.includes(",") || cc.includes("and") || cc.includes("এবং") || cc.includes("और");
     const isNewDisease = !matchedStandardKey || /rash|skin|eye|urinary|breath|weakness|joint|ear|throat|wound|fracture|dengue|malaria|allergy|diabetes|sugar|pressure|heart|kidney|liver|infection|backache|pain/i.test(cc);
-    const shouldUseAi = forceAi || hasVoiceDetails || isNewDisease || isMultiSymptom;
+    const isComplexPresentation = forceAi || hasVoiceDetails || isMultiSymptom || (!tree && isNewDisease);
 
-    if (shouldUseAi) {
-      console.log("[HPI Hybrid] Generating AI questions for: " + cc);
+    // ---------------------------------------------------------------------------------
+    // Branch 1: Hospital Tree Configured + Complex/Voice Presentation
+    // Personalized generation respecting hospital parameters + patient transcript.
+    // Explicitly SKIP writing to ClinicalQuestion (patient-specific, not canonical).
+    // ---------------------------------------------------------------------------------
+    if (tree && isComplexPresentation) {
+      console.log(`[HPI Branch 1] Personalized Tree AI generation for hospital ${hospital_id}::${tree.symptom_key}`);
       try {
-        const aiQs = await generateHpiQuestions(sessionObj);
+        const aiQs = await generateHpiQuestions(sessionObj, tree.parameters);
         if (Array.isArray(aiQs) && aiQs.length > 0) {
           return res.json({
             source: "ai",
             is_custom: true,
+            has_tree: true,
             questions: aiQs.map((q, idx) => ({
+              question_id: "ai_tree_" + (idx + 1),
+              symptom_key: tree.symptom_key,
+              english: q,
+              type: /1-10|scale|severity|rate/i.test(q) ? "scale" : (/when|how long|since|start|began/i.test(q) ? "duration" : "chips"),
+              translations: {},
+              options: null,
+            }))
+          });
+        }
+      } catch (err) {
+        console.warn("[HPI Branch 1] AI generation failed, falling back to tree params:", err.message);
+      }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Branch 2: Hospital Tree Configured + Standard Presentation
+    // Check ClinicalQuestion cache for (hospital_id, symptom_key).
+    // On miss: generate canonical questions via AI, atomically cache via bulkWrite, serve.
+    // ---------------------------------------------------------------------------------
+    if (tree && !isComplexPresentation) {
+      // Check cache first
+      const cachedQs = await ClinicalQuestion.find({
+        hospital_id,
+        symptom_key: tree.symptom_key,
+        active: true
+      }).sort({ question_order: 1 });
+
+      if (cachedQs && cachedQs.length > 0) {
+        console.log(`[HPI Branch 2] Cache HIT (${cachedQs.length} questions) for ${hospital_id}::${tree.symptom_key}`);
+        return res.json({
+          source: "database",
+          is_custom: false,
+          cached: true,
+          questions: cachedQs.map(q => ({
+            question_id: q._id.toString(),
+            symptom_key: q.symptom_key,
+            type: q.type,
+            english: q.english,
+            translations: q.translations,
+            options: q.options,
+          }))
+        });
+      }
+
+      // Cache miss: generate canonical question set
+      console.log(`[HPI Branch 2] Cache MISS for ${hospital_id}::${tree.symptom_key} — generating via Ollama...`);
+      const aiQs = await generateHpiQuestions(sessionObj, tree.parameters);
+
+      const formattedQuestions = (aiQs || []).slice(0, 5).map((q, idx) => {
+        const paramDef = tree.parameters[idx] || {};
+        const qType = paramDef.type || (/1-10|scale|severity|rate/i.test(q) ? "scale" : "chips");
+        const opts = paramDef.options && paramDef.options.length ? { English: paramDef.options } : null;
+        return {
+          question_order: idx,
+          english: q,
+          type: qType,
+          options: opts,
+        };
+      });
+
+      // Atomic idempotent write to ClinicalQuestion
+      if (formattedQuestions.length > 0) {
+        try {
+          const ops = formattedQuestions.map(q => ({
+            updateOne: {
+              filter: { hospital_id, symptom_key: tree.symptom_key, question_order: q.question_order },
+              update: {
+                $set: {
+                  hospital_id,
+                  symptom_key: tree.symptom_key,
+                  question_order: q.question_order,
+                  type: q.type,
+                  english: q.english,
+                  translations: {},
+                  options: q.options || {},
+                  active: true,
+                }
+              },
+              upsert: true,
+            }
+          }));
+          await ClinicalQuestion.bulkWrite(ops);
+          // Delete any excess slots if parameter count changed
+          await ClinicalQuestion.deleteMany({
+            hospital_id,
+            symptom_key: tree.symptom_key,
+            question_order: { $gte: formattedQuestions.length }
+          });
+          console.log(`[HPI Branch 2] Persisted ${formattedQuestions.length} canonical questions to DB for ${hospital_id}::${tree.symptom_key}`);
+        } catch (dbErr) {
+          console.warn("[HPI Branch 2] Failed to cache questions to DB:", dbErr.message);
+        }
+      }
+
+      return res.json({
+        source: "ai",
+        is_custom: false,
+        newly_cached: true,
+        questions: formattedQuestions.map((q, idx) => ({
+          question_id: `ai_${tree.symptom_key}_${idx + 1}`,
+          symptom_key: tree.symptom_key,
+          type: q.type,
+          english: q.english,
+          translations: {},
+          options: q.options,
+        }))
+      });
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Branch 3: No Hospital Tree + Complex Presentation
+    // Freeform AI generation tailored to new/custom condition.
+    // ---------------------------------------------------------------------------------
+    if (!tree && isComplexPresentation) {
+      console.log("[HPI Branch 3] Freeform AI generation for: " + cc);
+      try {
+        const aiQs = await generateHpiQuestions(sessionObj, null);
+        if (Array.isArray(aiQs) && aiQs.length > 0) {
+          return res.json({
+            source: "ai",
+            is_custom: true,
+            questions: aiQs.slice(0, 5).map((q, idx) => ({
               question_id: "ai_" + (idx + 1),
               english: q,
               type: /1-10|scale|severity|rate/i.test(q) ? "scale" : (/when|how long|since|start|began/i.test(q) ? "duration" : "chips"),
@@ -404,15 +566,29 @@ router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
           });
         }
       } catch (err) {
-        console.warn("[HPI Hybrid] AI generation failed, falling back to DB:", err.message);
+        console.warn("[HPI Branch 3] Freeform AI generation failed:", err.message);
       }
     }
 
-    // Otherwise use pre-stored database questions for instant zero-latency rendering
+    // ---------------------------------------------------------------------------------
+    // Branch 4: No Hospital Tree + Standard Presentation
+    // Serve global pre-seeded ClinicalQuestion (strictly hospital_id: null/absent).
+    // Zero-latency instant delivery.
+    // ---------------------------------------------------------------------------------
     const targetKey = matchedStandardKey || "general";
-    let dbQuestions = await ClinicalQuestion.find({ symptom_key: targetKey, active: true }).sort({ question_order: 1 });
+    const globalFilter = {
+      symptom_key: targetKey,
+      $or: [{ hospital_id: null }, { hospital_id: { $exists: false } }],
+      active: true,
+    };
+
+    let dbQuestions = await ClinicalQuestion.find(globalFilter).sort({ question_order: 1 });
     if (!dbQuestions || dbQuestions.length === 0) {
-      dbQuestions = await ClinicalQuestion.find({ symptom_key: "general", active: true }).sort({ question_order: 1 });
+      dbQuestions = await ClinicalQuestion.find({
+        symptom_key: "general",
+        $or: [{ hospital_id: null }, { hospital_id: { $exists: false } }],
+        active: true,
+      }).sort({ question_order: 1 });
     }
 
     if (dbQuestions && dbQuestions.length > 0) {
@@ -432,6 +608,7 @@ router.post("/:id/hpi-questions", requireAuth, async (req, res) => {
 
     res.json({ source: "fallback", questions: [] });
   } catch (err) {
+    console.error("[HPI] Route error:", err);
     res.status(500).json({ questions: [], error: err.message });
   }
 });

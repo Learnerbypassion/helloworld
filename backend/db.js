@@ -158,7 +158,8 @@ const Document = mongoose.model("Document", DocumentSchema);
 // 7. ClinicalQuestion Schema
 const ClinicalQuestionSchema = new mongoose.Schema(
   {
-    symptom_key: { type: String, required: true },
+    hospital_id: { type: String, default: null, index: true },
+    symptom_key: { type: String, required: true, index: true },
     question_order: { type: Number, default: 0 },
     type: { type: String, default: "chips" },
     english: { type: String, required: true },
@@ -170,6 +171,25 @@ const ClinicalQuestionSchema = new mongoose.Schema(
 );
 
 const ClinicalQuestion = mongoose.model("ClinicalQuestion", ClinicalQuestionSchema);
+
+// 8. SymptomDecisionTree Schema (Hospital-authored question parameters)
+const SymptomDecisionTreeSchema = new mongoose.Schema(
+  {
+    hospital_id: { type: String, required: true, index: true },
+    symptom_key: { type: String, required: true, index: true },
+    parameters: [
+      {
+        label: { type: String, required: true },
+        type: { type: String, enum: ["yes_no", "scale", "chips", "text"], default: "yes_no" },
+        options: [{ type: String }],
+      },
+    ],
+    active: { type: Boolean, default: true },
+  },
+  schemaOptions
+);
+
+const SymptomDecisionTree = mongoose.model("SymptomDecisionTree", SymptomDecisionTreeSchema);
 
 async function initClinicalQuestions() {
   try {
@@ -200,6 +220,7 @@ module.exports = {
   IntakeSession,
   Document,
   ClinicalQuestion,
+  SymptomDecisionTree,
   initClinicalQuestions,
   genToken,
 };

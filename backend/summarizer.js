@@ -115,12 +115,43 @@ async function generateSummary(session, docs) {
 // -----------------------------------------------------------------------
 // AI-driven HPI follow-up question generation
 // -----------------------------------------------------------------------
-async function generateHpiQuestions(session) {
+async function generateHpiQuestions(session, hospitalParams = null) {
+  const cc = session.chief_complaint || "General Consultation";
+  const transcript = session.transcript || "";
+  const mode = session.ayush_mode ? "Ayurvedic" : "Allopathic";
+
+  const hasCustomTree = Array.isArray(hospitalParams) && hospitalParams.length > 0;
+
   try {
-    const cc = session.chief_complaint || "General Consultation";
-    const transcript = session.transcript || "";
-    const mode = session.ayush_mode ? "Ayurvedic" : "Allopathic";
-    const prompt = `You are an expert Clinical Triage AI at a hospital OPD kiosk.
+    let prompt;
+
+    if (hasCustomTree) {
+      // 1. Parameter-driven prompt strictly following hospital decision-tree
+      const paramList = hospitalParams.map((p, idx) => {
+        const optText = Array.isArray(p.options) && p.options.length > 0 ? ` (options: ${p.options.join(', ')})` : '';
+        return `${idx + 1}. Parameter: "${p.label}" [Type: ${p.type}${optText}]`;
+      }).join('\n');
+
+      prompt = `You are an expert Clinical Triage AI at a hospital OPD kiosk.
+The hospital administration has configured a mandatory decision-tree inquiry protocol for this symptom.
+You MUST generate clear, empathetic follow-up clinical questions directly reflecting each of the following hospital parameters in order:
+
+Hospital Decision Tree Parameters:
+${paramList}
+
+Patient Clinical Context:
+- Chief Complaint: ${cc}
+${transcript ? "- Spoken Voice Description / Details: " + transcript : ""}
+- Consultation Mode: ${mode}
+
+Rules:
+- For EACH hospital parameter above, craft one plain-language, natural clinical question that addresses that exact parameter for this patient.
+- Do not invent arbitrary unrelated questions; strictly follow the hospital's inquiry topics.
+- Respond ONLY with a valid JSON array of question strings in English. No markdown, no preamble, just the JSON array.
+Example: ["Question for parameter 1?", "Question for parameter 2?"]`;
+    } else {
+      // 2. Standard freeform triage prompt
+      prompt = `You are an expert Clinical Triage AI at a hospital OPD kiosk.
 The patient has reported the following symptom/condition:
 - Chief Complaint: ${cc}
 ${transcript ? "- Spoken Voice Description / Details: " + transcript : ""}
@@ -138,6 +169,7 @@ Rules:
 - Questions must be plain-language, clear, and easy for a patient to answer.
 - Respond ONLY with a valid JSON array of question strings in English. No markdown, no explanation, just the JSON array.
 Example: ["When did the ear pain start?", "On a scale of 1-10, how severe is the pain?", "Do you notice any pus or fluid discharge from the ear?", "Have you taken any painkillers or ear drops?"]`;
+    }
 
     const response = await axios.post(
       `${OLLAMA_URL}/api/generate`,
@@ -145,15 +177,32 @@ Example: ["When did the ear pain start?", "On a scale of 1-10, how severe is the
       { timeout: 25000 }
     );
     const raw = response.data?.response?.trim() || "";
-    // Extract JSON array from the response
     const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) return defaultHpiQuestions(cc);
-    const parsed = JSON.parse(match[0]);
-    return Array.isArray(parsed) ? parsed.filter(q => typeof q === "string" && q.length > 5) : defaultHpiQuestions(cc);
+
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed)) {
+        const clean = parsed.filter(q => typeof q === "string" && q.trim().length > 5).slice(0, 5);
+        if (clean.length > 0) return clean;
+      }
+    }
+
+    // Fallback if LLM output was invalid
+    return hasCustomTree ? fallbackFromTree(hospitalParams, cc) : defaultHpiQuestions(cc);
   } catch (err) {
-    console.info("[summarizer] HPI questions generation skipped:", err.message?.slice(0, 60));
-    return defaultHpiQuestions(session.chief_complaint || "");
+    console.info("[summarizer] HPI questions generation fallback:", err.message?.slice(0, 60));
+    return hasCustomTree ? fallbackFromTree(hospitalParams, cc) : defaultHpiQuestions(cc);
   }
+}
+
+function fallbackFromTree(params, cc) {
+  return params.map(p => {
+    const lbl = (p.label || "").trim();
+    if (lbl.endsWith("?")) return lbl;
+    if (p.type === "scale") return `On a scale of 1 to 10, how severe is your ${lbl}?`;
+    if (p.type === "yes_no") return `Do you have or notice ${lbl}?`;
+    return `Please describe: ${lbl}`;
+  }).slice(0, 5);
 }
 
 function defaultHpiQuestions(cc) {

@@ -1039,22 +1039,17 @@ export default function KioskFlow() {
                 className="h-full flex flex-col">
                 <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('symptomsTitle')}</h2>
                 <p className="text-gray-500 mb-4">{t('symptomsSubtitle', selectedLanguage)}</p>
-                {intakeData.redFlags.length > 0 && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-4 flex items-center animate-pulse">
-                    <AlertTriangle className="w-6 h-6 mr-3 shrink-0" />
-                    <span className="font-semibold">{t('redFlagAlert')}</span>
-                  </div>
-                )}
+                
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                   {SYMPTOMS_LIST.map(sym => {
                     const symLabel = SYMPTOM_TRANSLATIONS[sym.id]?.[selectedLanguage] || sym.label;
                     const sel = intakeData.chiefComplaint.includes(sym.label) || intakeData.chiefComplaint.includes(symLabel);
                     return (
                       <button key={sym.id} onClick={() => toggleSymptom(sym)}
-                        className={`p-4 rounded-2xl border-2 transition flex flex-col items-center justify-center space-y-1 ${sel ? (sym.redFlag ? 'border-red-500 bg-red-50' : 'border-brand-500 bg-brand-50') : 'border-gray-200 hover:bg-gray-50'}`}>
+                        className={`p-4 rounded-2xl border-2 transition flex flex-col items-center justify-center space-y-1 ${sel ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'}`}>
                         <span className="text-3xl">{sym.icon}</span>
                         <span className={`font-semibold text-sm text-center ${sel ? 'text-gray-900' : 'text-gray-600'}`}>{symLabel}</span>
-                        {sym.redFlag && <span className="text-xs text-red-500 font-bold">⚠️ {t('urgent')}</span>}
+                        
                       </button>
                     );
                   })}
@@ -1603,12 +1598,10 @@ export default function KioskFlow() {
                     <div><h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Documents</h3><p className="text-gray-800 font-medium text-sm">{intakeData.documents.length} file(s) — OCR processed</p></div>
                     <FileUp className="w-8 h-8 text-brand-500" />
                   </div>
-                  {intakeData.redFlags.length > 0 && (
-                    <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-center">
-                      <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
-                      <span className="text-red-700 font-semibold text-sm">Red Flag — Priority triage will be notified</span>
-                    </div>
-                  )}
+                  <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 mr-2 shrink-0" />
+                    <span className="text-emerald-800 font-semibold text-sm">Your responses have been recorded</span>
+                  </div>
                   <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm font-medium border border-blue-200 flex items-center">
                     <ShieldCheck className="w-5 h-5 mr-3 shrink-0" />
                     Zero-Persistence: Data will be wiped from kiosk and sent as FHIR Bundle to hospital HIS.
