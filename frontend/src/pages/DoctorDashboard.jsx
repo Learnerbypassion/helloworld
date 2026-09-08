@@ -301,9 +301,35 @@ function FormattedAiSummary({ text }) {
 
 export default function DoctorDashboard() {
   const navigate = useNavigate();
-  const { queue, patients, completeConsultation, logout } = useGlobal();
+  const { queue, patients, completeConsultation, logout, user } = useGlobal();
 
-  const myQueue = queue;
+  const currentDoctor = React.useMemo(() => {
+    if (user && user.role === 'doctor') return user;
+    try {
+      const stored = JSON.parse(localStorage.getItem('medikiosk_user'));
+      if (stored && (stored.role === 'doctor' || stored.name)) return stored;
+    } catch (_) {}
+    return user || null;
+  }, [user]);
+
+  const doctorName = currentDoctor?.name
+    ? (currentDoctor.name.startsWith('Dr.') ? currentDoctor.name : `Dr. ${currentDoctor.name}`)
+    : 'Dr. Attending Physician';
+
+  const doctorSpecialty = currentDoctor?.specialization || currentDoctor?.doctor_type || 'Clinical Specialist';
+
+  // Strict client-side queue isolation guarantee
+  const myQueue = React.useMemo(() => {
+    if (!Array.isArray(queue)) return [];
+    const docId = currentDoctor?.id || currentDoctor?._id;
+    if (!docId) return queue;
+    const docIdStr = docId.toString();
+    return queue.filter(q => {
+      const qDocId = (q.doctor_id || q.doctorId || q.doctor)?.toString();
+      if (qDocId) return qDocId === docIdStr;
+      return true;
+    });
+  }, [queue, currentDoctor]);
   const [activeConsultation, setActiveConsultation] = useState(null);
   const [symptoms, setSymptoms] = useState('');
   const [prescription, setPrescription] = useState('');
@@ -566,11 +592,30 @@ Status: Digitally Signed & Synced to Central ABDM Registry
       <div className="w-full md:w-64 bg-brand-900 text-white flex flex-col shrink-0">
         <div className="p-6 flex items-center border-b border-brand-800">
           <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Dhanvantri" className="w-9 h-9 mr-3 drop-shadow-md rounded-xl object-contain bg-white p-1" />
-          <span className="text-lg font-bold">Dhanvantri</span>
+          <div>
+            <span className="text-lg font-bold block leading-tight">Dhanvantri</span>
+            <span className="text-[11px] text-brand-300">Doctor Portal</span>
+          </div>
         </div>
+
+        {/* Logged in Doctor Profile Card */}
+        <div className="mx-4 mt-4 p-3 bg-brand-800/90 rounded-xl border border-brand-700/60 shadow-inner flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-brand-700 border border-brand-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+            <Stethoscope className="w-5 h-5 text-brand-200" />
+          </div>
+          <div className="overflow-hidden">
+            <span className="text-[10px] font-semibold text-brand-300 uppercase tracking-wider block">Logged In</span>
+            <p className="text-sm font-bold text-white truncate" title={doctorName}>{doctorName}</p>
+            <p className="text-[11px] text-brand-300 truncate" title={doctorSpecialty}>{doctorSpecialty}</p>
+          </div>
+        </div>
+
         <nav className="flex-1 p-4 space-y-2">
-          <button className="w-full flex items-center px-4 py-3 bg-brand-800 rounded-lg">
-            <ClipboardList className="w-5 h-5 mr-3" /> Today's Queue
+          <button className="w-full flex items-center justify-between px-4 py-3 bg-brand-800 rounded-lg text-white font-medium shadow-2xs">
+            <div className="flex items-center">
+              <ClipboardList className="w-5 h-5 mr-3 text-brand-200" /> Today's Queue
+            </div>
+            <span className="bg-brand-700 px-2 py-0.5 rounded-full text-xs font-semibold">{myQueue.length}</span>
           </button>
         </nav>
         <div className="p-4 border-t border-brand-800">
@@ -582,19 +627,43 @@ Status: Digitally Signed & Synced to Central ABDM Registry
 
       {/* Main Content */}
       <div className="flex-1 p-6 md:p-8 flex flex-col overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Module C: Structured Summary Engine</h1>
-          <div className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded font-medium border border-blue-200">
-            Clinician-in-the-Loop Mode
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Module C: Structured Summary Engine</h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5 text-sm text-gray-600">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Attending Doctor
+              </span>
+              <span className="font-bold text-gray-900 text-base">{doctorName}</span>
+              <span className="text-gray-400">•</span>
+              <span className="text-brand-700 font-semibold">{doctorSpecialty}</span>
+              {currentDoctor?.hospital_name && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-500">{currentDoctor.hospital_name}</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-xs md:text-sm bg-blue-50 text-blue-800 px-3.5 py-1.5 rounded-lg font-medium border border-blue-200 flex items-center gap-2 shadow-2xs">
+              <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+              Clinician-in-the-Loop Mode
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 flex-1">
           {/* Queue Sidebar */}
           <div className="xl:col-span-1 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="p-4 border-b border-gray-200 bg-gray-50 font-semibold text-gray-800 flex justify-between">
-              <span>Waiting Patients</span>
-              <span className="bg-brand-100 text-brand-800 px-2 rounded-full text-sm">{myQueue.length}</span>
+            <div className="p-4 border-b border-gray-200 bg-gray-50 font-semibold text-gray-800 flex justify-between items-center">
+              <div>
+                <span className="block text-gray-900 font-bold">Waiting Patients</span>
+                <span className="text-[11px] text-gray-500 font-normal">Assigned to {doctorName}</span>
+              </div>
+              <span className="bg-brand-100 text-brand-800 px-2.5 py-0.5 rounded-full text-xs font-bold">{myQueue.length}</span>
             </div>
             <div className="p-4 space-y-3 overflow-y-auto flex-1">
               {myQueue.length === 0 && <p className="text-gray-500 text-sm text-center py-6">No patients waiting.</p>}

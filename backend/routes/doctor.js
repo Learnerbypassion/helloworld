@@ -13,30 +13,78 @@ const router = express.Router();
 router.get("/stats", requireAuth, requireRole("doctor", "hospital_admin"), async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    
-    // Find all patients belonging to hospital
-    const patientIds = (await Patient.find({ hospital_id: req.user.hospital_id }).select("_id")).map(p => p._id);
+    const isDoc = req.user.role === "doctor";
+    const docId = req.user.id;
+    const hospId = req.user.hospital_id;
 
-    const queue_count = await IntakeSession.countDocuments({
-      patient_id: { $in: patientIds },
-      status: "submitted"
-    });
+    if (isDoc) {
+      const mongoose = require("mongoose");
+      const docIdStr = docId ? docId.toString() : "";
+      const isObjectId = mongoose.Types.ObjectId.isValid(docIdStr);
+      const docObjectId = isObjectId ? new mongoose.Types.ObjectId(docIdStr) : null;
 
-    const red_flag_count = await IntakeSession.countDocuments({
-      patient_id: { $in: patientIds },
-      status: "submitted",
-      red_flag: true
-    });
+      const patientConditions = [{ doctor_id: docIdStr }];
+      if (docObjectId) patientConditions.push({ doctor_id: docObjectId });
+      const myPatients = await Patient.find({ $or: patientConditions }).select("_id");
+      const myPatientIds = myPatients.map(p => p._id);
 
-    const reviewed_today = await IntakeSession.countDocuments({
-      patient_id: { $in: patientIds },
-      status: "reviewed",
-      reviewed_at: { $gte: today }
-    });
+      const sessionConditions = [
+        { doctor_id: docIdStr },
+        { recommended_doctor_id: docIdStr }
+      ];
+      if (docObjectId) {
+        sessionConditions.push({ doctor_id: docObjectId });
+        sessionConditions.push({ recommended_doctor_id: docObjectId });
+      }
+      if (myPatientIds.length > 0) {
+        sessionConditions.push({ patient_id: { $in: myPatientIds } });
+      }
 
-    const total_patients = patientIds.length;
+      const queue_count = await IntakeSession.countDocuments({
+        status: "submitted",
+        $or: sessionConditions
+      });
 
-    res.json({ queue_count, red_flag_count, reviewed_today, total_patients });
+      const red_flag_count = await IntakeSession.countDocuments({
+        status: "submitted",
+        red_flag: true,
+        $or: sessionConditions
+      });
+
+      const reviewed_today = await IntakeSession.countDocuments({
+        status: "reviewed",
+        reviewed_at: { $gte: today },
+        $or: sessionConditions
+      });
+
+      const total_patients = myPatientIds.length;
+
+      return res.json({ queue_count, red_flag_count, reviewed_today, total_patients });
+    } else {
+      // Hospital Admin stats
+      const patientIds = (await Patient.find({ hospital_id: hospId }).select("_id")).map(p => p._id);
+
+      const queue_count = await IntakeSession.countDocuments({
+        patient_id: { $in: patientIds },
+        status: "submitted"
+      });
+
+      const red_flag_count = await IntakeSession.countDocuments({
+        patient_id: { $in: patientIds },
+        status: "submitted",
+        red_flag: true
+      });
+
+      const reviewed_today = await IntakeSession.countDocuments({
+        patient_id: { $in: patientIds },
+        status: "reviewed",
+        reviewed_at: { $gte: today }
+      });
+
+      const total_patients = patientIds.length;
+
+      return res.json({ queue_count, red_flag_count, reviewed_today, total_patients });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to fetch doctor stats" });
   }
@@ -51,20 +99,33 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
 
     let query = { status: "submitted" };
     if (isDoc) {
-      // Find all patients in this hospital, or assigned to this doctor
-      const pList = await Patient.find({
-        $or: [{ hospital_id: hospId }, { doctor_id: docId }]
-      }).select("_id");
-      const patientIds = pList.map(p => p._id.toString());
+      const mongoose = require("mongoose");
+      const docIdStr = docId ? docId.toString() : "";
+      const isObjectId = mongoose.Types.ObjectId.isValid(docIdStr);
+      const docObjectId = isObjectId ? new mongoose.Types.ObjectId(docIdStr) : null;
 
-      // Show sessions explicitly assigned to this doctor, or unassigned, or belonging to hospital
+      // Find patients assigned to this doctor
+      const patientConditions = [{ doctor_id: docIdStr }];
+      if (docObjectId) patientConditions.push({ doctor_id: docObjectId });
+      const myPatients = await Patient.find({ $or: patientConditions }).select("_id");
+      const myPatientIds = myPatients.map(p => p._id);
+
+      // A doctor must ONLY see sessions assigned to them or their treatment patients
+      const sessionOrConditions = [
+        { doctor_id: docIdStr },
+        { recommended_doctor_id: docIdStr }
+      ];
+      if (docObjectId) {
+        sessionOrConditions.push({ doctor_id: docObjectId });
+        sessionOrConditions.push({ recommended_doctor_id: docObjectId });
+      }
+      if (myPatientIds.length > 0) {
+        sessionOrConditions.push({ patient_id: { $in: myPatientIds } });
+      }
+
       query = {
         status: "submitted",
-        $or: [
-          { doctor_id: docId },
-          { doctor_id: null },
-          { patient_id: { $in: patientIds } }
-        ]
+        $or: sessionOrConditions
       };
     } else {
       // Hospital Admin: show all submitted sessions for this hospital or unassigned
