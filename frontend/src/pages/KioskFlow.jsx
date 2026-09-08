@@ -301,8 +301,12 @@ export default function KioskFlow() {
     if (audioEnabled) {
       if (step === 4.5 && ayushQuestions.length > 0 && ayushSubStep < ayushQuestions.length) {
         const q = ayushQuestions[ayushSubStep];
-        const transQ = getAyushQuestionTrans(q, lang);
-        if (transQ) speak(transQ, lang);
+        const speechText = getFullAyushSpeechText(q, lang);
+        if (speechText) speak(speechText, lang);
+      } else if (step === 4 && hpiQuestions.length > 0 && hpiSubStep < hpiQuestions.length) {
+        const qItem = hpiQuestions[hpiSubStep];
+        const speechText = getFullHpiSpeechText(qItem, lang);
+        if (speechText) speak(speechText, lang);
       } else {
         const prompt = STEP_PROMPTS_BY_LANG[lang]?.[step] || STEP_PROMPTS_BY_LANG.English[lang] || STEP_PROMPTS_BY_LANG.English[step];
         if (prompt) speak(prompt, lang);
@@ -346,7 +350,8 @@ export default function KioskFlow() {
   const STEP_PROMPTS = STEP_PROMPTS_BY_LANG[selectedLanguage] || STEP_PROMPTS_BY_LANG.English;
 
   useEffect(() => {
-    if (audioEnabled && STEP_PROMPTS[step]) {
+    // Exclude step 4 (HPI) and 4.5 (AYUSH) so generic prompts do not cancel the clinical questions
+    if (audioEnabled && step !== 4 && step !== 4.5 && STEP_PROMPTS[step]) {
       const t = setTimeout(() => speak(STEP_PROMPTS[step], selectedLanguage), 400);
       return () => clearTimeout(t);
     }
@@ -719,11 +724,6 @@ export default function KioskFlow() {
     setIntakeData(p => ({ ...p, ayushData: { ...p.ayushData, [field]: value } }));
     if (ayushSubStep < ayushQuestions.length - 1) {
       setAyushSubStep(s => s + 1);
-      const nextQ = ayushQuestions[ayushSubStep + 1];
-      if (audioEnabled && nextQ) {
-        const transQ = getAyushQuestionTrans(nextQ, selectedLanguage);
-        setTimeout(() => speak(transQ, selectedLanguage), 300);
-      }
     } else {
       // Completed all 10 Dashavidha Pariksha questions -> Move to Step 5 (OCR Scan)!
       setStep(5);
@@ -805,11 +805,6 @@ export default function KioskFlow() {
     if (step === 4.5) {
       if (ayushSubStep < ayushQuestions.length - 1) {
         setAyushSubStep(s => s + 1);
-        const nextQ = ayushQuestions[ayushSubStep + 1];
-        if (audioEnabled && nextQ) {
-          const transQ = getAyushQuestionTrans(nextQ, selectedLanguage);
-          setTimeout(() => speak(transQ, selectedLanguage), 300);
-        }
       } else {
         setStep(5);
       }
@@ -1354,14 +1349,25 @@ export default function KioskFlow() {
                       {/* Bilingual Ayurvedic Question Box */}
                       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-5 rounded-2xl border border-emerald-200 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
-                            {transLabel}
-                          </span>
-                          {selectedLanguage !== 'English' && (
-                            <span className="text-xs text-gray-400 font-medium">
-                              {q.label}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                              {transLabel}
                             </span>
-                          )}
+                            {selectedLanguage !== 'English' && (
+                              <span className="text-xs text-gray-400 font-medium">
+                                {q.label}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => speak(getFullAyushSpeechText(q, selectedLanguage), selectedLanguage)}
+                            className="p-1 px-2.5 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-800 transition-all flex items-center gap-1.5 text-xs font-semibold shadow-2xs cursor-pointer"
+                            title="Listen again"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>{selectedLanguage === 'Bengali' ? 'পুনরায় শুনুন' : selectedLanguage === 'Hindi' ? 'पुनः सुनें' : 'Listen'}</span>
+                          </button>
                         </div>
                         {selectedLanguage !== 'English' && (
                           <p className="text-sm font-semibold text-emerald-800 mb-1.5 pb-1 border-b border-emerald-200/60">
