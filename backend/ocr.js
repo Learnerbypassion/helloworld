@@ -1,18 +1,3 @@
-/**
- * MediKiosk -- Document Digitization Pipeline (ocr.js)
- *
- * Replaced: tesseract.js (in-process)
- * New: HTTP call to the PaddleOCR FastAPI sidecar.
- *
- * Exported signatures IDENTICAL to old version (zero blast radius):
- *   runOcr(imagePath)          -> string (raw OCR text)
- *   processDocument(imagePath) -> { raw_text, medications, labs }
- *
- * Configuration (env vars):
- *   OCR_SERVICE_URL  default "http://127.0.0.1:8001"
- *                    In Docker Compose: "http://ocr:8001"
- *   OCR_TIMEOUT_MS   default 30000
- */
 const fs       = require("fs");
 const path     = require("path");
 const axios    = require("axios");
