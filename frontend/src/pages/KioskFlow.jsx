@@ -301,7 +301,14 @@ export default function KioskFlow() {
     if (audioEnabled) {
       if (step === 4.5 && ayushQuestions.length > 0 && ayushSubStep < ayushQuestions.length) {
         const q = ayushQuestions[ayushSubStep];
-        const speechText = getFullAyushSpeechText(q, lang);
+        let speechText = getFullAyushSpeechText(q, lang);
+        if (ayushSubStep === 0) {
+          const introPrompt = STEP_PROMPTS_BY_LANG[lang]?.[4.5] || STEP_PROMPTS_BY_LANG.English?.[4.5];
+          if (introPrompt) {
+            const delimiter = ['Bengali', 'Hindi', 'Marathi'].includes(lang) ? '। ' : '. ';
+            speechText = `${introPrompt}${delimiter}${speechText}`;
+          }
+        }
         if (speechText) speak(speechText, lang);
       } else if (step === 4 && hpiQuestions.length > 0 && hpiSubStep < hpiQuestions.length) {
         const qItem = hpiQuestions[hpiSubStep];
@@ -362,12 +369,22 @@ export default function KioskFlow() {
       api.getAyushQuestions().then(q => setAyushQuestions(q)).catch(() => {});
   }, [intakeData.mode]);
 
-  // Auto-speak AYUSH Dashavidha Question + All Options
+  // Auto-speak AYUSH Dashavidha Question + All Options (with pre-announcement on question 1)
   useEffect(() => {
     if (step === 4.5 && audioEnabled && ayushQuestions[ayushSubStep]) {
       const q = ayushQuestions[ayushSubStep];
-      const speechText = getFullAyushSpeechText(q, selectedLanguage);
-      const t = setTimeout(() => speak(speechText, selectedLanguage), 350);
+      let speechText = getFullAyushSpeechText(q, selectedLanguage);
+
+      // On the first question, include the pre-announcement intro seamlessly
+      if (ayushSubStep === 0) {
+        const introPrompt = STEP_PROMPTS_BY_LANG[selectedLanguage]?.[4.5] || STEP_PROMPTS_BY_LANG.English?.[4.5];
+        if (introPrompt) {
+          const delimiter = ['Bengali', 'Hindi', 'Marathi'].includes(selectedLanguage) ? '। ' : '. ';
+          speechText = `${introPrompt}${delimiter}${speechText}`;
+        }
+      }
+
+      const t = setTimeout(() => speak(speechText, selectedLanguage), 400);
       return () => clearTimeout(t);
     }
   }, [step, ayushSubStep, audioEnabled, selectedLanguage, ayushQuestions]);
