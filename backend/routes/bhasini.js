@@ -113,43 +113,69 @@ function getSarvamKey() {
   return (process.env.SARVAM_API_KEY || process.env.SARVAM_KEY || "").trim();
 }
 
-function getBhasiniKey() {
+function getBhasiniCredentials() {
   try {
     const envPath = path.resolve(__dirname, "../.env");
     if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, "utf8");
-      const match = content.match(/^BHASINI_API_KEY[ \t]*=[ \t]*([^\r\n#]+)/m);
-      if (match && match[1] && match[1].trim()) {
-        const clean = match[1].trim().replace(/^['"]|['"]$/g, "");
-        process.env.BHASINI_API_KEY = clean;
-        return clean;
-      } else {
-        delete process.env.BHASINI_API_KEY;
+      const envContent = fs.readFileSync(envPath, "utf8");
+      const matchInf = envContent.match(/^(?:BHASINI_INFERENCE_KEY|BHASINI_API_KEY)[ \t]*=[ \t]*([^\r\n#]+)/m);
+      const matchUdyat = envContent.match(/^(?:BHASINI_UDYAT_KEY|BHASINI_ULCA_API_KEY)[ \t]*=[ \t]*([^\r\n#]+)/m);
+      const matchUser = envContent.match(/^BHASINI_USER_ID[ \t]*=[ \t]*([^\r\n#]+)/m);
+
+      if (matchInf && matchInf[1] && matchInf[1].trim()) {
+        process.env.BHASINI_INFERENCE_KEY = matchInf[1].trim().replace(/^['"]|['"]$/g, "");
+      }
+      if (matchUdyat && matchUdyat[1] && matchUdyat[1].trim()) {
+        process.env.BHASINI_UDYAT_KEY = matchUdyat[1].trim().replace(/^['"]|['"]$/g, "");
+      }
+      if (matchUser && matchUser[1] && matchUser[1].trim()) {
+        process.env.BHASINI_USER_ID = matchUser[1].trim().replace(/^['"]|['"]$/g, "");
       }
     }
   } catch (_) {}
-  return (process.env.BHASINI_API_KEY || "").trim();
+
+  const inferenceKey = (process.env.BHASINI_INFERENCE_KEY || process.env.BHASINI_API_KEY || "").trim();
+  const udyatKey = (process.env.BHASINI_UDYAT_KEY || process.env.BHASINI_ULCA_API_KEY || "").trim();
+  const userId = (process.env.BHASINI_USER_ID || udyatKey || inferenceKey || "").trim();
+
+  return {
+    inferenceKey,
+    udyatKey,
+    userId,
+    isConfigured: !!(inferenceKey || udyatKey),
+  };
+}
+
+function getBhasiniKey() {
+  const creds = getBhasiniCredentials();
+  return creds.inferenceKey || creds.udyatKey || "";
 }
 
 function getActiveProvider() {
   const sKey = getSarvamKey();
   if (sKey) return "sarvam";
-  const bKey = getBhasiniKey();
-  if (bKey) return "bhashini";
+  const bCreds = getBhasiniCredentials();
+  if (bCreds.isConfigured) return "bhashini";
   return "none";
 }
 
 // GET /api/bhasini/status
 router.get("/status", (req, res) => {
-  const provider = getActiveProvider();
+  const sKey = getSarvamKey();
+  const bCreds = getBhasiniCredentials();
+  const provider = sKey ? "sarvam" : (bCreds.isConfigured ? "bhashini" : "none");
+
   res.json({
     available: provider !== "none",
     provider: provider,
-    label: provider === "sarvam"
+    label: sKey && bCreds.isConfigured
+      ? "Sarvam AI (Primary) + Bhashini (Failover)"
+      : sKey
       ? "Sarvam AI Indic Mother-Tongue Engine"
-      : provider === "bhashini"
-      ? "Bhashini ULCA Pipeline"
+      : bCreds.isConfigured
+      ? "Bhashini ULCA / Dhruva Pipeline"
       : "Browser Web Speech",
+    has_bhashini_fallback: bCreds.isConfigured,
     cache_enabled: true,
   });
 });
@@ -175,6 +201,7 @@ router.post("/tts", async (req, res) => {
 
   const sarvamKey = getSarvamKey();
   const bhasiniKey = getBhasiniKey();
+  const bCreds = getBhasiniCredentials();
 
   if (!sarvamKey && !bhasiniKey) {
     return res.status(503).json({
@@ -300,8 +327,9 @@ router.post("/tts", async (req, res) => {
         {
           headers: {
             "Content-Type":  "application/json",
-            "Authorization": bhasiniKey,
-            "userID":        bhasiniKey,
+            "Authorization": bCreds.inferenceKey || bCreds.udyatKey,
+            ...(bCreds.udyatKey ? { "ulcaApiKey": bCreds.udyatKey } : {}),
+            "userID":        bCreds.userId,
           },
           timeout: TIMEOUT_MS,
           params: { pipelineId: BHASINI_PIPELINE },
@@ -397,8 +425,9 @@ router.post("/asr", async (req, res) => {
         {
           headers: {
             "Content-Type":  "application/json",
-            "Authorization": bhasiniKey,
-            "userID":        bhasiniKey,
+            "Authorization": bCreds.inferenceKey || bCreds.udyatKey,
+            ...(bCreds.udyatKey ? { "ulcaApiKey": bCreds.udyatKey } : {}),
+            "userID":        bCreds.userId,
           },
           timeout: TIMEOUT_MS,
           params: { pipelineId: BHASINI_PIPELINE },
