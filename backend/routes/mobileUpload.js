@@ -96,22 +96,22 @@ router.post("/sessions/:id/upload-token", requireAuth, async (req, res) => {
     // Proactive invalidation: immediately expire any live token belonging to
     // another session on the same physical kiosk. This closes the abandoned-
     // session / wrong-patient-attribution risk without requiring single-use tokens.
-    if (session.kiosk_id) {
-      await IntakeSession.updateMany(
-        {
-          kiosk_id: session.kiosk_id,
-          _id: { $ne: session._id },
-          upload_token_expires_at: { $gt: new Date() },
-        },
-        { $set: { upload_token_expires_at: new Date() } }
-      );
-    }
+    const activeKioskId = session.kiosk_id || "KIOSK-01";
+    await IntakeSession.updateMany(
+      {
+        kiosk_id: activeKioskId,
+        _id: { $ne: session._id },
+        upload_token_expires_at: { $gt: new Date() },
+      },
+      { $set: { upload_token_expires_at: new Date() } }
+    );
 
     // Issue new token
     const token      = uuidv4();
     const expires_at = new Date(Date.now() + UPLOAD_TOKEN_TTL_MS);
 
     await IntakeSession.findByIdAndUpdate(session._id, {
+      kiosk_id:                activeKioskId,
       upload_token:            token,
       upload_token_expires_at: expires_at,
       upload_token_used:       false,
