@@ -265,7 +265,7 @@ export default function KioskFlow() {
   const t = (key, ...args) => getTranslation(key, selectedLanguage, ...args);
   const navigate = useNavigate();
   const location = useLocation();
-  const { doctors, submitKioskIntake, handleAuthSuccess } = useGlobal();
+  const { user, doctors, submitKioskIntake, handleAuthSuccess } = useGlobal();
 
   const [searchParams] = useSearchParams();
   const urlHospId = searchParams.get('hospital_id');
@@ -700,7 +700,7 @@ export default function KioskFlow() {
   const ensureSession = async () => {
     if (sessionId) return sessionId;
     try {
-      const patId = patient?.id || patient?._id || 1;
+      const patId = patient?.id || patient?._id || user?.id || user?._id || 1;
       const sRes  = await api.createSession({ patient_id: patId, ayush_mode: intakeData.mode === 'AYUSH', hospital_id: kioskHospitalId, kiosk_id: kioskId });
       const sid   = sRes.session_id || sRes.id;
       setSessionId(sid);

@@ -219,7 +219,11 @@ async function initClinicalQuestions() {
 // Helper function to generate unique kiosk session token A-1, A-2...
 async function genToken() {
   const count = await IntakeSession.countDocuments();
-  return `A-${count + 14}`;
+  let nextNum = count + 14;
+  while (await IntakeSession.exists({ token: `A-${nextNum}` })) {
+    nextNum++;
+  }
+  return `A-${nextNum}`;
 }
 
 module.exports = {

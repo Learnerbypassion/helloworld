@@ -14,7 +14,7 @@ const fs       = require("fs");
 const { v4: uuidv4 } = require("uuid");
 const multer   = require("multer");
 
-const { IntakeSession, Patient, Document, genToken } = require("../db");
+const { IntakeSession, Patient, Document, genToken, mongoose } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 const { handleDocumentUpload } = require("../documentUpload");
 const { buildFhirBundle } = require("../fhirBuilder");
@@ -93,7 +93,16 @@ router.get("/", requireAuth, async (req, res) => {
 router.post("/", requireAuth, async (req, res) => {
   try {
     const { patient_id, doctor_id, ayush_mode = false, consent_given = true, status = "in_progress", chief_complaint } = req.body;
-    const patient = await Patient.findById(patient_id);
+    let targetPatientId = patient_id;
+    if (!targetPatientId || !mongoose.Types.ObjectId.isValid(targetPatientId)) {
+      if (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
+        targetPatientId = req.user.id;
+      }
+    }
+    if (!targetPatientId || !mongoose.Types.ObjectId.isValid(targetPatientId)) {
+      return res.status(400).json({ error: "Valid patient_id is required" });
+    }
+    const patient = await Patient.findById(targetPatientId);
     if (!patient) return res.status(404).json({ error: "Patient not found" });
     if (req.user.role === "patient" && req.user.id !== patient.id && req.user.id !== patient._id.toString())
       return res.status(403).json({ error: "Cannot start a session for another patient" });
