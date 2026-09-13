@@ -354,6 +354,14 @@ export default function KioskFlow() {
   const [ocrResult,   setOcrResult]  = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // QR-code phone handoff state
+  const [uploadToken,  setUploadToken]  = useState(null);
+  const [qrDataUrl,    setQrDataUrl]    = useState(null);
+  const [qrLoading,    setQrLoading]    = useState(false);
+  const [qrError,      setQrError]      = useState(null); // 'localhost_guard' | 'fetch_error' | null
+  const pollIntervalRef  = useRef(null);
+  const prevDocCountRef  = useRef(0);
+
   const STEP_PROMPTS = STEP_PROMPTS_BY_LANG[selectedLanguage] || STEP_PROMPTS_BY_LANG.English;
 
   useEffect(() => {
@@ -398,6 +406,79 @@ export default function KioskFlow() {
       return () => clearTimeout(t);
     }
   }, [step, hpiSubStep, audioEnabled, selectedLanguage, hpiQuestions]);
+
+  // QR-code phone handoff: issue token + fetch QR on entering Step 5,
+  // then poll GET /api/sessions/:id every 3s until phone-side upload detected.
+  useEffect(() => {
+    if (step !== 5) {
+      // Clean up polling whenever we leave Step 5
+      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+      return;
+    }
+
+    let cancelled = false;
+
+    const initQr = async () => {
+      const sid = sessionId || await ensureSession();
+      if (!sid || cancelled) return;
+
+      setQrLoading(true);
+      setQrError(null);
+      setQrDataUrl(null);
+      setUploadToken(null);
+
+      try {
+        // 1. Issue upload token (also proactively expires stale tokens on same kiosk)
+        const tokenRes = await api.requestUploadToken(sid);
+        if (cancelled) return;
+
+        // 2. If server reports localhost, show the warning banner — don't fetch a useless QR
+        if (tokenRes.is_localhost) {
+          setQrError('localhost_guard');
+          setQrLoading(false);
+          return;
+        }
+
+        const tok = tokenRes.token;
+        setUploadToken(tok);
+
+        // 3. Fetch QR data URL
+        const qrRes = await api.getMobileUploadQr(tok);
+        if (cancelled) return;
+        setQrDataUrl(qrRes.qr_data_url);
+
+        // 4. Poll the existing GET /api/sessions/:id every 3 s.
+        //    Compare document count; update state when phone-side upload appears.
+        prevDocCountRef.current = intakeData.documents.length;
+        pollIntervalRef.current = setInterval(async () => {
+          try {
+            const sessionData = await api.getSession(sid);
+            const docs = sessionData?.documents || [];
+            if (docs.length > prevDocCountRef.current) {
+              prevDocCountRef.current = docs.length;
+              // Mirror what handleFileChange does: update ocrResult + intakeData.documents
+              const lastDoc = docs[docs.length - 1];
+              setOcrResult({ medications: lastDoc.medications || [], labs: lastDoc.labs || [] });
+              setIntakeData(p => ({ ...p, documents: docs.map(d => d.filename || d.id) }));
+            }
+          } catch (_) { /* network blip — keep polling */ }
+        }, 3000);
+
+      } catch (err) {
+        if (!cancelled) setQrError('fetch_error');
+      } finally {
+        if (!cancelled) setQrLoading(false);
+      }
+    };
+
+    initQr();
+
+    return () => {
+      cancelled = true;
+      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
 
   useEffect(() => {
@@ -1497,21 +1578,93 @@ export default function KioskFlow() {
 
             {step === 5 && (
               <motion.div key="s5" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto text-center">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">Scan Past Records</h2>
-                <p className="text-gray-500 mb-8">Upload previous prescriptions or lab reports (max 10 MB).</p>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf" style={{ display: 'none' }} />
-                <div onClick={() => fileInputRef.current?.click()}
-                  className="border-4 border-dashed border-gray-300 rounded-3xl p-14 flex flex-col items-center justify-center bg-gray-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer group">
-                  {isUploading ? <div className="text-brand-600 text-lg font-bold animate-pulse">Processing via OCR...</div> : (
-                    <><FileUp className="w-20 h-20 text-gray-400 group-hover:text-brand-500 mb-4" />
-                    <p className="text-xl font-bold text-gray-700 group-hover:text-brand-700">Tap to Upload Document</p>
-                    <p className="text-gray-500 mt-2 text-sm">Image or PDF, max 10 MB</p></>
-                  )}
+                className="h-full flex flex-col justify-center max-w-2xl mx-auto">
+                <h2 className="text-3xl font-bold text-gray-900 mb-1 text-center">Scan Past Records</h2>
+                <p className="text-gray-500 mb-6 text-center text-sm">Upload previous prescriptions or lab reports (max 10 MB).</p>
+
+                {/* Two-column layout: tap-upload + QR panel */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  {/* ── Left: existing tap-to-upload (unchanged) ── */}
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">Tap to upload here</p>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf" style={{ display: 'none' }} />
+                    <div
+                      id="kiosk-upload-dropzone"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-4 border-dashed border-gray-300 rounded-2xl p-8 flex flex-col items-center justify-center bg-gray-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer group min-h-[180px]"
+                    >
+                      {isUploading
+                        ? <div className="text-brand-600 text-sm font-bold animate-pulse text-center">Processing via OCR…</div>
+                        : <>
+                            <FileUp className="w-14 h-14 text-gray-400 group-hover:text-brand-500 mb-3" />
+                            <p className="text-base font-bold text-gray-700 group-hover:text-brand-700 text-center">Tap to Upload</p>
+                            <p className="text-gray-500 mt-1 text-xs text-center">Image or PDF, max 10 MB</p>
+                          </>
+                      }
+                    </div>
+                  </div>
+
+                  {/* ── Right: QR code panel ── */}
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">Or scan QR with your phone</p>
+                    <div className="border-2 border-gray-200 rounded-2xl p-4 flex flex-col items-center justify-center bg-gray-50 min-h-[180px]">
+
+                      {/* Loading spinner */}
+                      {qrLoading && !qrError && (
+                        <div className="flex flex-col items-center space-y-2">
+                          <Loader className="w-8 h-8 animate-spin text-brand-500" />
+                          <p className="text-xs text-gray-500">Generating QR…</p>
+                        </div>
+                      )}
+
+                      {/* Localhost guard warning */}
+                      {qrError === 'localhost_guard' && (
+                        <div className="text-center px-2">
+                          <div className="text-2xl mb-2">⚠️</div>
+                          <p className="text-xs font-bold text-amber-700 mb-1">QR handoff not configured</p>
+                          <p className="text-xs text-amber-600 leading-relaxed">
+                            Set <code className="bg-amber-100 px-1 rounded">KIOSK_LAN_HOST</code> in <code className="bg-amber-100 px-1 rounded">backend/.env</code> and restart the server.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Generic fetch error */}
+                      {qrError === 'fetch_error' && (
+                        <div className="text-center px-2">
+                          <div className="text-2xl mb-2">🔌</div>
+                          <p className="text-xs text-red-600">Could not generate QR. Use tap-to-upload instead.</p>
+                        </div>
+                      )}
+
+                      {/* QR code + waiting indicator */}
+                      {qrDataUrl && !qrError && (
+                        <div className="flex flex-col items-center">
+                          <img
+                            src={qrDataUrl}
+                            alt="Scan this QR code with your phone to upload a document"
+                            className="w-36 h-36 rounded-xl shadow-sm"
+                          />
+                          <p className="text-xs text-gray-500 mt-2 text-center">Scan with your phone camera</p>
+                          {intakeData.documents.length === 0 && (
+                            <div className="flex items-center space-x-1.5 mt-2">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500" />
+                              </span>
+                              <p className="text-xs text-brand-600 font-medium">Waiting for phone upload…</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Confirmation bar — full width, shown when any path produces a document */}
                 {intakeData.documents.length > 0 && (
-                  <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 mr-2" />
+                  <div className="mt-5 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium flex items-center justify-center">
+                    <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
                     {intakeData.documents.length} document(s) uploaded.
                     {ocrResult && <span className="ml-2 text-sm">({ocrResult.medications?.length || 0} meds, {ocrResult.labs?.length || 0} labs extracted)</span>}
                   </div>

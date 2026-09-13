@@ -16,27 +16,12 @@ const multer   = require("multer");
 
 const { IntakeSession, Patient, Document, genToken } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
-const { processDocument } = require("../ocr");
+const { handleDocumentUpload } = require("../documentUpload");
 const { buildFhirBundle } = require("../fhirBuilder");
 const { detectRedFlag } = require("../redFlagRules");
 const { generateSummary } = require("../summarizer");
 
 const router = express.Router();
-
-const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-// 10 MB limit -- returns 413 with a clear message when exceeded
-const multerUpload = multer({
-  dest: UPLOAD_DIR,
-  limits: { fileSize: 10 * 1024 * 1024 },
-}).single("file");
-
-function multerMiddleware(req, res) {
-  return new Promise((resolve, reject) => {
-    multerUpload(req, res, (err) => { if (err) reject(err); else resolve(); });
-  });
-}
 
 async function sessionOr404(id, res) {
   try {
@@ -198,48 +183,16 @@ router.patch("/:id/notes", requireAuth, async (req, res) => {
 });
 
 // ---------- Document upload with OCR (10 MB cap) ----------
+// Actual upload logic lives in ../documentUpload.js (shared with mobile-upload route).
 router.post("/:id/document", requireAuth, async (req, res) => {
   try {
     const s = await sessionOr404(req.params.id, res);
     if (!s) return;
     if (!(await assertAccess(req, res, s))) return;
-
-    try {
-      await multerMiddleware(req, res);
-    } catch (multerErr) {
-      if (multerErr.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({
-          error: "File too large. Maximum allowed size is 10 MB. Please compress or crop the document."
-        });
-      }
-      return res.status(400).json({ error: multerErr.message || "File upload failed" });
-    }
-
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-    const ext = path.extname(req.file.originalname) || ".png";
-    const fname = `${uuidv4()}${ext}`;
-    const finalPath = path.join(UPLOAD_DIR, fname);
-    fs.renameSync(req.file.path, finalPath);
-
-    let result;
-    try {
-      result = await processDocument(finalPath);
-    } catch (err) {
-      try { fs.unlinkSync(finalPath); } catch (_) {}
-      return res.status(503).json({ error: `OCR failed: ${err.message}` });
-    }
-
-    const doc = await Document.create({
-      session_id: s.id, filename: fname,
-      raw_ocr_text: result.raw_text,
-      extracted_meds: result.medications,
-      extracted_labs: result.labs,
-    });
-
-    res.json({ document_id: doc.id, raw_text: result.raw_text, medications: result.medications, labs: result.labs });
+    await handleDocumentUpload(s.id, req, res);
   } catch (err) { res.status(500).json({ error: err.message || "Failed to process document" }); }
 });
+
 
 // ---------- Submit session (FHIR + fire-and-forget AI summary) ----------
 router.post("/:id/submit", requireAuth, async (req, res) => {

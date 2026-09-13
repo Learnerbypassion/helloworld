@@ -112,6 +112,11 @@ export const api = {
   submitSession: (id, data = {}) => apiFetch(`/sessions/${id}/submit`, { method: 'POST', body: JSON.stringify(data) }),
   getSession: (id) => apiFetch(`/sessions/${id}`),
 
+  // QR-code phone handoff
+  requestUploadToken: (sessionId) => apiFetch(`/sessions/${sessionId}/upload-token`, { method: 'POST' }),
+  getMobileUploadQr:  (token)     => apiFetch(`/mobile-upload-qr/${token}`),
+
+
   // Doctor Module
   getDoctorQueue: () => apiFetch('/doctor/queue'),
   getDoctorStats: () => apiFetch('/doctor/stats'),

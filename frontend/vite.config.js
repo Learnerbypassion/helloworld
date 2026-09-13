@@ -8,4 +8,7 @@ export default defineConfig({
     react(),
   ],
   base: '/dhanvantari/',
+  server: {
+    host: true, // bind to 0.0.0.0 so phones on the LAN can reach the dev server
+  },
 })

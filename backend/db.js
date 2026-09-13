@@ -138,6 +138,10 @@ const IntakeSessionSchema = new mongoose.Schema(
     hospital_id: { type: mongoose.Schema.Types.Mixed, ref: "Hospital" },
     kiosk_id: { type: String, default: "KIOSK-01" },
     queue_notified: { type: Boolean, default: false },
+    // QR-code phone handoff upload token (session-scoped, LAN-local)
+    upload_token: { type: String, index: true },
+    upload_token_expires_at: { type: Date },
+    upload_token_used: { type: Boolean, default: false }, // reserved for future single-use mode
   },
   schemaOptions
 );
