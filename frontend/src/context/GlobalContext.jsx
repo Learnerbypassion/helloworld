@@ -65,105 +65,111 @@ export const GlobalProvider = ({ children }) => {
   const refreshAll = useCallback(async () => {
     try {
       const authToken = getAuthToken();
-      if (!authToken) {
-        // Try public doctors list or kiosk check if available
+      const stored = getStoredUser();
+      const role = stored?.role;
+      if (!authToken || !role) {
         return;
       }
 
-      // 1. Fetch Doctors
-      try {
-        const docs = await api.getDoctors();
-        if (Array.isArray(docs)) setDoctors(docs.map(normalizeDoctor));
-      } catch (e) {
-        // May not be allowed for patient role
+      // 1. Fetch Doctors (for hospital staff, admin, and kiosk)
+      if (['hospital_admin', 'doctor', 'receptionist', 'kiosk'].includes(role)) {
+        try {
+          const docs = await api.getDoctors();
+          if (Array.isArray(docs)) setDoctors(docs.map(normalizeDoctor));
+        } catch (e) {
+          // May not be allowed
+        }
       }
 
       // 2. Fetch Receptionists (hospital_admin role only)
-      try {
-        const recs = await api.getReceptionists();
-        if (Array.isArray(recs)) setReceptionists(recs);
-      } catch (e) {
-        // Not admin
+      if (role === 'hospital_admin') {
+        try {
+          const recs = await api.getReceptionists();
+          if (Array.isArray(recs)) setReceptionists(recs);
+        } catch (e) {
+          // Not admin
+        }
       }
 
-      // 3. Fetch Patients
-      try {
-        const pts = await api.getPatients();
-        if (Array.isArray(pts)) {
-          // Also fetch session history for patients
-          const detailed = await Promise.all(
-            pts.map(async (p) => {
-              try {
-                const sessions = await api.getPatientSessions(p.id);
-                const history = (sessions || []).map((s) => ({
-                  date: (s.submitted_at || s.created_at || '').slice(0, 10),
-                  doctor: 'Attending Physician',
-                  intakeSummary: {
-                    mode: s.ayush_mode ? 'AYUSH' : 'Allopathic',
-                    chiefComplaint: s.chief_complaint ? [s.chief_complaint] : [],
-                  },
-                  symptomsText: s.summary || s.chief_complaint || 'N/A',
-                  prescription: s.prescription || s.diagnosis || 'Under evaluation',
-                }));
-                return normalizePatient({ ...p, history });
-              } catch {
-                return normalizePatient(p);
-              }
-            })
-          );
-          setPatients(detailed);
-        }
-      } catch (e) {
-        // If patient login, fetch own profile
-        const stored = getStoredUser();
-        if (stored?.role === 'patient' && stored?.id) {
-          try {
-            const myP = await api.getPatient(stored.id);
-            const sessions = await api.getPatientSessions(stored.id);
-            const history = (sessions || []).map((s) => ({
-              date: (s.submitted_at || s.created_at || '').slice(0, 10),
-              doctor: 'Attending Physician',
-              symptomsText: s.summary || s.chief_complaint || 'N/A',
-              prescription: s.prescription || s.diagnosis || 'Under evaluation',
-            }));
-            setPatients([normalizePatient({ ...myP, history })]);
-          } catch (err) {
-            console.error('Error fetching patient profile', err);
+      // 3. Fetch Patients (hospital staff roles only)
+      if (['hospital_admin', 'doctor', 'receptionist'].includes(role)) {
+        try {
+          const pts = await api.getPatients();
+          if (Array.isArray(pts)) {
+            // Also fetch session history for patients
+            const detailed = await Promise.all(
+              pts.map(async (p) => {
+                try {
+                  const sessions = await api.getPatientSessions(p.id);
+                  const history = (sessions || []).map((s) => ({
+                    date: (s.submitted_at || s.created_at || '').slice(0, 10),
+                    doctor: 'Attending Physician',
+                    intakeSummary: {
+                      mode: s.ayush_mode ? 'AYUSH' : 'Allopathic',
+                      chiefComplaint: s.chief_complaint ? [s.chief_complaint] : [],
+                    },
+                    symptomsText: s.summary || s.chief_complaint || 'N/A',
+                    prescription: s.prescription || s.diagnosis || 'Under evaluation',
+                  }));
+                  return normalizePatient({ ...p, history });
+                } catch {
+                  return normalizePatient(p);
+                }
+              })
+            );
+            setPatients(detailed);
           }
+        } catch (e) {}
+      } else if (role === 'patient' && stored?.id) {
+        // If patient login, fetch own profile only
+        try {
+          const myP = await api.getPatient(stored.id);
+          const sessions = await api.getPatientSessions(stored.id);
+          const history = (sessions || []).map((s) => ({
+            date: (s.submitted_at || s.created_at || '').slice(0, 10),
+            doctor: 'Attending Physician',
+            symptomsText: s.summary || s.chief_complaint || 'N/A',
+            prescription: s.prescription || s.diagnosis || 'Under evaluation',
+          }));
+          setPatients([normalizePatient({ ...myP, history })]);
+        } catch (err) {
+          console.error('Error fetching patient profile', err);
         }
       }
 
-      // 4. Fetch Queue (Doctor & Hospital Staff)
-      try {
-        const qList = await api.getDoctorQueue();
-        if (Array.isArray(qList)) {
-          // Enrich queue items with session detail
-          const enriched = await Promise.all(
-            qList.map(async (qItem) => {
-              try {
-                const fullSession = await api.getSession(qItem.session_id);
-                return normalizeQueueItem({
-                  ...qItem,
-                  patient_id: fullSession.patient?.id || qItem.patient_id,
-                  intake: {
-                    mode: fullSession.ayush_mode ? 'AYUSH' : 'Allopathic',
-                    chiefComplaint: fullSession.chief_complaint ? [fullSession.chief_complaint] : [],
-                    hpi: fullSession.transcript || fullSession.pmh || '',
-                    ayushData: fullSession.ayush_fields || {},
-                    redFlags: fullSession.red_flag ? [fullSession.red_flag_reason || 'Triage Red Flag'] : [],
-                    documents: (fullSession.documents || []).map((d) => d.filename || d),
-                    fhirBundle: fullSession.fhir_bundle,
-                  },
-                });
-              } catch {
-                return normalizeQueueItem(qItem);
-              }
-            })
-          );
-          setQueue(enriched);
+      // 4. Fetch Queue (Doctor & Hospital Admin only)
+      if (['doctor', 'hospital_admin'].includes(role)) {
+        try {
+          const qList = await api.getDoctorQueue();
+          if (Array.isArray(qList)) {
+            // Enrich queue items with session detail
+            const enriched = await Promise.all(
+              qList.map(async (qItem) => {
+                try {
+                  const fullSession = await api.getSession(qItem.session_id);
+                  return normalizeQueueItem({
+                    ...qItem,
+                    patient_id: fullSession.patient?.id || qItem.patient_id,
+                    intake: {
+                      mode: fullSession.ayush_mode ? 'AYUSH' : 'Allopathic',
+                      chiefComplaint: fullSession.chief_complaint ? [fullSession.chief_complaint] : [],
+                      hpi: fullSession.transcript || fullSession.pmh || '',
+                      ayushData: fullSession.ayush_fields || {},
+                      redFlags: fullSession.red_flag ? [fullSession.red_flag_reason || 'Triage Red Flag'] : [],
+                      documents: (fullSession.documents || []).map((d) => d.filename || d),
+                      fhirBundle: fullSession.fhir_bundle,
+                    },
+                  });
+                } catch {
+                  return normalizeQueueItem(qItem);
+                }
+              })
+            );
+            setQueue(enriched);
+          }
+        } catch (e) {
+          // Not doctor
         }
-      } catch (e) {
-        // Not doctor
       }
     } catch (err) {
       console.error('Error loading data from API', err);

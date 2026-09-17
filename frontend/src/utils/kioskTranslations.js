@@ -93,6 +93,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'Evaluating:',
     sarvamBadge: 'Sarvam Indic Voice 🇮🇳',
     bhasiniBadge: 'Bhasini ✓',
+    listenOptions: 'Listen Options',
+    readAloud: 'Read Question and Options Aloud',
+    aiEngineActive: 'AI Clinical Engine Active',
+    formulatingQuestions: 'Formulating clinical intake questions',
+    aiGeneratingPrompt: 'AI is personalising clinical questions for your doctor. Please wait.',
+    aiThinkingMessages: [
+      'Thinking & analysing your symptoms...',
+      'Consulting clinical triage guidelines...',
+      'Creating best targeted questions...',
+      'Personalising intake for your doctor...',
+      'Almost ready...'
+    ],
   },
 
   Hindi: {
@@ -184,6 +196,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'मूल्यांकन:',
     sarvamBadge: 'सर्वम इंडिक वॉइस 🇮🇳',
     bhasiniBadge: 'भाषिणी ✓',
+    listenOptions: 'विकल्प सुनें',
+    readAloud: 'प्रश्न और विकल्प बोलकर सुनाएं',
+    aiEngineActive: 'एआई क्लिनिकल इंजन सक्रिय',
+    formulatingQuestions: 'क्लिनिकल इनटेक प्रश्न तैयार किए जा रहे हैं',
+    aiGeneratingPrompt: 'एआई आपके डॉक्टर के लिए क्लिनिकल प्रश्न तैयार कर रहा है। कृपया प्रतीक्षा करें।',
+    aiThinkingMessages: [
+      'लक्षणों का विश्लेषण किया जा रहा है...',
+      'क्लिनिकल ट्राइएज दिशानिर्देशों की जांच हो रही है...',
+      'सटीक प्रश्न तैयार किए जा रहे हैं...',
+      'आपके डॉक्टर के लिए विवरण तैयार किया जा रहा है...',
+      'बस कुछ ही क्षण...'
+    ],
   },
 
   Bengali: {
@@ -275,6 +299,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'বিশ্লেষণ চলছে:',
     sarvamBadge: 'সার্বম ইন্ডিয়া ভয়েস 🇮🇳',
     bhasiniBadge: 'ভাশিনী ✓',
+    listenOptions: 'বিকল্পগুলি শুনুন',
+    readAloud: 'প্রশ্ন ও বিকল্পগুলি জোরে পড়ুন',
+    aiEngineActive: 'এআই ক্লিনিক্যাল ইঞ্জিন সক্রিয়',
+    formulatingQuestions: 'ক্লিনিক্যাল ইনটেক প্রশ্ন তৈরি করা হচ্ছে',
+    aiGeneratingPrompt: 'এআই আপনার ডাক্তারের জন্য ক্লিনিক্যাল প্রশ্ন তৈরি করছে। অনুগ্রহ করে অপেক্ষা করুন।',
+    aiThinkingMessages: [
+      'আপনার লক্ষণগুলি বিশ্লেষণ করা হচ্ছে...',
+      'ক্লিনিক্যাল ট্রায়াজ নির্দেশিকা যাচাই করা হচ্ছে...',
+      'সবচেয়ে উপযুক্ত প্রশ্ন প্রস্তুত করা হচ্ছে...',
+      'আপনার ডাক্তারের জন্য তথ্য সাজানো হচ্ছে...',
+      'প্রায় প্রস্তুত...'
+    ],
   },
 
   Tamil: {
@@ -366,6 +402,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'மதிப்பிடுகிறது:',
     sarvamBadge: 'சர்வம் இண்டிக் வாய்ஸ் 🇮🇳',
     bhasiniBadge: 'பாஷிணி ✓',
+    listenOptions: 'விருப்பங்களைக் கேளுங்கள்',
+    readAloud: 'கேள்வி மற்றும் விருப்பங்களை சத்தமாகப் படியுங்கள்',
+    aiEngineActive: 'AI மருத்துவ இயந்திரம் இயங்குகிறது',
+    formulatingQuestions: 'மருத்துவ பரிசோதனை கேள்விகள் உருவாக்கப்படுகின்றன',
+    aiGeneratingPrompt: 'AI உங்கள் மருத்துவருக்கான கேள்விகளை உருவாக்குகிறது. தயவுசெய்து காத்திருக்கவும்.',
+    aiThinkingMessages: [
+      'உங்கள் அறிகுறிகள் பகுப்பாய்வு செய்யப்படுகின்றன...',
+      'மருத்துவ வழிகாட்டுதல்கள் சரிபார்க்கப்படுகின்றன...',
+      'பொருத்தமான கேள்விகள் உருவாக்கப்படுகின்றன...',
+      'உங்கள் மருத்துவருக்காக விவரங்கள் தயாராகின்றன...',
+      'கிட்டத்தட்ட தயாராகிவிட்டது...'
+    ],
   },
 
   Telugu: {
@@ -374,7 +422,7 @@ export const UI_TRANSLATIONS = {
     title: 'ధన్వంతరి',
     subTitle: 'పేషెంట్ మెడికియోస్క్',
     welcomeTitle: 'OPDకి స్వాగతం',
-    welcomeSubtitle: 'మీ భాషను ఎంచుకోండి, ఆపై మీ ఆభా ID లేదా మొబైల్ నంబర్‌ను ధృవీకరించండి.',
+    welcomeSubtitle: 'మీ భాషను ఎంచుకోండి, ఆపై మీ ABHA ID లేదా మొబైల్ నంబర్‌ను ధృవీకరించండి.',
     selectLanguage: 'భాషను ఎంచుకోండి',
     abhaPlaceholder: 'ఆభా ID లేదా మొబైల్ (ఉదా. 12-3456-7890-1234)',
     patientFound: 'రోగి వివరాలు లభించాయి',
@@ -457,6 +505,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'విశ్లేషిస్తోంది:',
     sarvamBadge: 'సర్వం ఇండిక్ వాయిస్ 🇮🇳',
     bhasiniBadge: 'భాషిణి ✓',
+    listenOptions: 'ఎంపಿಕలను వినండి',
+    readAloud: 'ప్రశ్న మరియు ఎంపికలను బిగ్గరగా చదవండి',
+    aiEngineActive: 'AI క్లినికల్ ఇంజిన్ యాక్టివ్',
+    formulatingQuestions: 'క్లినికల్ ఇన్‌టేక్ ప్రశ్నలను రూపొందిస్తోంది',
+    aiGeneratingPrompt: 'AI మీ డాక్టర్ కోసం క్లినికల్ ప్రశ్నలను సిద్ధం చేస్తోంది. దయచేసి వేచి ఉండండి.',
+    aiThinkingMessages: [
+      'మీ లక్షణాలను విశ్లేషిస్తోంది...',
+      'క్లినికల్ మార్గదర్శకాలను సమీక్షిస్తోంది...',
+      'సరైన ప్రశ్నలను రూపొందిస్తోంది...',
+      'మీ వైద్యుని కోసం వివరాలు సిద్ధం చేస్తోంది...',
+      'దాదాపు సిద్ధమైంది...'
+    ],
   },
 
   Marathi: {
@@ -548,6 +608,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'मूल्यमापन:',
     sarvamBadge: 'सर्वम इंडिक व्हॉईस 🇮🇳',
     bhasiniBadge: 'भाषिणी ✓',
+    listenOptions: 'पर्याय ऐका',
+    readAloud: 'प्रश्न आणि पर्याय मोठ्याने वाचा',
+    aiEngineActive: 'एआय क्लिनिकल इंजिन सक्रिय',
+    formulatingQuestions: 'क्लिनिकल तपासणी प्रश्न तयार करत आहे',
+    aiGeneratingPrompt: 'एआय तुमच्या डॉक्टरांसाठी क्लिनिकल प्रश्न तयार करत आहे. कृपया प्रतीक्षा करा.',
+    aiThinkingMessages: [
+      'तुमच्या लक्षणांचे विश्लेषण केले जात आहे...',
+      'क्लिनिकल मार्गदर्शक तत्त्वांचा सल्ला घेतला जात आहे...',
+      'योग्य प्रश्न तयार केले जात आहेत...',
+      'तुमच्या डॉक्टरांसाठी माहिती तयार केली जात आहे...',
+      'जवळजवळ तयार...'
+    ],
   },
 
   Gujarati: {
@@ -639,6 +711,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'મૂલ્યાંકન:',
     sarvamBadge: 'સર્વમ ઇન્ડિક વૉઇસ 🇮🇳',
     bhasiniBadge: 'ભાષિણી ✓',
+    listenOptions: 'વિકલ્પો સાંભળો',
+    readAloud: 'પ્રશ્ન અને વિકલ્પો મોટેથી વાંચો',
+    aiEngineActive: 'AI ક્લિનિકલ એન્જિન સક્રિય',
+    formulatingQuestions: 'ક્લિનિકલ ઇનટેક પ્રશ્નો તૈયાર થઈ રહ્યા છે',
+    aiGeneratingPrompt: 'AI તમારા ડૉક્ટર માટે ક્લિનિકલ પ્રશ્નો તૈયાર કરી રહ્યું છે. કૃપા કરીને રાહ જુઓ.',
+    aiThinkingMessages: [
+      'તમારા લક્ષણોનું વિશ્લેષણ કરવામાં આવી રહ્યું છે...',
+      'ક્લિનિકલ માર્ગદર્શિકા તપાસવામાં આવી રહી છે...',
+      'શ્રેષ્ઠ પ્રશ્નો તૈયાર કરવામાં આવી રહ્યા છે...',
+      'તમારા ડૉક્ટર માટે માહિતી તૈયાર કરવામાં આવી રહી છે...',
+      'લગભગ તૈયાર...'
+    ],
   },
 
   Kannada: {
@@ -730,6 +814,18 @@ export const UI_TRANSLATIONS = {
     evaluating: 'ಮೌಲ್ಯಮಾಪನ:',
     sarvamBadge: 'ಸರ್ವಂ ಇಂಡಿಕ್ ಧ್ವನಿ 🇮🇳',
     bhasiniBadge: 'ಭಾಷಿಣಿ ✓',
+    listenOptions: 'ಆಯ್ಕೆಗಳನ್ನು ಆಲಿಸಿ',
+    readAloud: 'ಪ್ರಶ್ನೆ ಮತ್ತು ಆಯ್ಕೆಗಳನ್ನು ಗಟ್ಟಿಯಾಗಿ ಓದಿ',
+    aiEngineActive: 'AI ಕ್ಲಿನಿಕಲ್ ಎಂಜಿನ್ ಸಕ್ರಿಯ',
+    formulatingQuestions: 'ಕ್ಲಿನಿಕಲ್ ಇನ್‌ಟೇಕ್ ಪ್ರಶ್ನೆಗಳನ್ನು ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ',
+    aiGeneratingPrompt: 'AI ನಿಮ್ಮ ವೈದ್ಯರಿಗಾಗಿ ಕ್ಲಿನಿಕಲ್ ಪ್ರಶ್ನೆಗಳನ್ನು ಸಿದ್ಧಪಡಿಸುತ್ತಿದೆ. ದಯವಿಟ್ಟು ನಿರೀಕ್ಷಿಸಿ.',
+    aiThinkingMessages: [
+      'ನಿಮ್ಮ ರೋಗಲಕ್ಷಣಗಳನ್ನು ವಿಶ್ಲೇಷಿಸಲಾಗುತ್ತಿದೆ...',
+      'ಕ್ಲಿನಿಕಲ್ ಮಾರ್ಗಸೂಚಿಗಳನ್ನು ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ...',
+      'ಸೂಕ್ತ ಪ್ರಶ್ನೆಗಳನ್ನು ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ...',
+      'ನಿಮ್ಮ ವೈದ್ಯರಿಗಾಗಿ ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ...',
+      'ಬಹುತೇಕ ಸಿದ್ಧವಾಗಿದೆ...'
+    ],
   },
 };
 
@@ -873,8 +969,9 @@ export const STEP_PROMPTS_BY_LANG = {
 
 export function getTranslation(key, lang = 'English', ...args) {
   const langDict = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.English;
-  let text = langDict[key] || UI_TRANSLATIONS.English[key] || key;
-  if (args.length > 0) {
+  let text = langDict[key] !== undefined ? langDict[key] : (UI_TRANSLATIONS.English[key] !== undefined ? UI_TRANSLATIONS.English[key] : key);
+  if (Array.isArray(text)) return text;
+  if (typeof text === 'string' && args.length > 0) {
     args.forEach((val, idx) => {
       text = text.replace(new RegExp(`\\{${idx}\\}`, 'g'), val);
     });

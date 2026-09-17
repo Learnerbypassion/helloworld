@@ -30,14 +30,18 @@ const SYMPTOMS_LIST = [
   { id: 'eye',        label: 'Eye Problems',        icon: '👁️', redFlag: false },
 ];
 
-function AIThinkingLoader({ chiefComplaint }) {
-  const messages = [
+function AIThinkingLoader({ chiefComplaint, t }) {
+  const defaultMessages = [
     'Thinking & analysing your symptoms...',
     'Consulting clinical triage guidelines...',
     'Creating best targeted questions...',
     'Personalising intake for your doctor...',
     'Almost ready...'
   ];
+  const translatedMessages = t ? t('aiThinkingMessages') : null;
+  const messages = Array.isArray(translatedMessages) && translatedMessages.length > 0
+    ? translatedMessages
+    : defaultMessages;
 
   const [msgIdx, setMsgIdx] = useState(0);
   const [progress, setProgress] = useState(18);
@@ -69,7 +73,7 @@ function AIThinkingLoader({ chiefComplaint }) {
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-600"></span>
         </span>
-        <span>AI Clinical Engine Active</span>
+        <span>{t ? t('aiEngineActive') : 'AI Clinical Engine Active'}</span>
       </motion.div>
 
       {/* Animated Glowing Orb & Brain */}
@@ -131,7 +135,7 @@ function AIThinkingLoader({ chiefComplaint }) {
       {/* Selected symptoms context tags */}
       {chiefComplaint && chiefComplaint.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center justify-center gap-1.5 max-w-md">
-          <span className="text-xs text-gray-400 font-medium mr-1">Evaluating:</span>
+          <span className="text-xs text-gray-400 font-medium mr-1">{t ? t('evaluating') : 'Evaluating:'}</span>
           {chiefComplaint.map((sym, idx) => (
             <span
               key={idx}
@@ -157,7 +161,7 @@ function AIThinkingLoader({ chiefComplaint }) {
 
       {/* Pulsing indicator dots */}
       <div className="flex items-center space-x-1.5 text-xs text-gray-400 font-medium">
-        <span>Formulating clinical intake questions</span>
+        <span>{t ? t('formulatingQuestions') : 'Formulating clinical intake questions'}</span>
         <span className="flex space-x-1 ml-1">
           <motion.span
             animate={{ opacity: [0.3, 1, 0.3] }}
@@ -712,6 +716,10 @@ export default function KioskFlow() {
     setStep(4);
     setLoadingHpi(true);
     setHpiSubStep(0);
+    if (audioEnabled) {
+      const genPrompt = t('aiGeneratingPrompt') || 'AI is personalising clinical questions for your doctor. Please wait.';
+      speak(genPrompt, selectedLanguage);
+    }
     try {
       const sid = await ensureSession();
       if (sid) {
@@ -728,30 +736,31 @@ export default function KioskFlow() {
         } catch (_) {}
         const res = await api.getHpiQuestions(sid);
         if (res && res.questions && res.questions.length > 0) {
-          const items = [];
-          for (const q of res.questions) {
-            if (typeof q === "object" && q.english) {
-              let trans = (q.translations && q.translations[selectedLanguage]) || q.english;
-              // If AI generated and non-English, translate on the fly
-              if (selectedLanguage !== "English" && trans === q.english) {
-                try {
-                  const tr = await api.translate(q.english, selectedLanguage);
-                  if (tr && tr.translated_text) trans = tr.translated_text;
-                } catch (_) {}
+          const items = await Promise.all(
+            res.questions.map(async (q) => {
+              if (typeof q === "object" && q.english) {
+                let trans = (q.translations && q.translations[selectedLanguage]) || q.english;
+                // If AI generated and non-English, translate on the fly
+                if (selectedLanguage !== "English" && trans === q.english) {
+                  try {
+                    const tr = await api.translate(q.english, selectedLanguage);
+                    if (tr && tr.translated_text) trans = tr.translated_text;
+                  } catch (_) {}
+                }
+                const opts = q.type === "scale"
+                  ? null
+                  : ((q.options && (q.options[selectedLanguage] || q.options.English)) || null);
+                return {
+                  english: q.english,
+                  translated: trans,
+                  type: q.type,
+                  options: opts,
+                };
+              } else {
+                return { english: q, translated: q };
               }
-              const opts = q.type === "scale"
-                ? null
-                : ((q.options && (q.options[selectedLanguage] || q.options.English)) || null);
-              items.push({
-                english: q.english,
-                translated: trans,
-                type: q.type,
-                options: opts,
-              });
-            } else {
-              items.push({ english: q, translated: q });
-            }
-          }
+            })
+          );
           setHpiQuestions(items);
           if (audioEnabled && items[0]) {
             const spText = getFullHpiSpeechText(items[0], selectedLanguage);
@@ -942,8 +951,8 @@ export default function KioskFlow() {
   const displayDoctors = filteredDoctors.length > 0 ? filteredDoctors : (availableDoctors.length > 0 ? availableDoctors : doctors);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-brand-950 to-gray-900 flex items-center justify-center p-4 sm:p-8 font-sans">
-      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[88vh]">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-brand-950 to-gray-900 flex items-center justify-center p-3 sm:p-6 font-sans">
+      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh] max-h-[850px]">
 
         <div className="bg-brand-900 text-white p-5 flex justify-between items-center shrink-0">
           <div className="flex items-center">
@@ -1001,7 +1010,7 @@ export default function KioskFlow() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 relative">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 relative">
           <AnimatePresence mode="wait">
 
             {step === 0 && (
@@ -1129,55 +1138,73 @@ export default function KioskFlow() {
 
             {step === 3 && (
               <motion.div key="s3" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('symptomsTitle')}</h2>
-                <p className="text-gray-500 mb-4">{t('symptomsSubtitle', selectedLanguage)}</p>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                  {SYMPTOMS_LIST.map(sym => {
-                    const symLabel = SYMPTOM_TRANSLATIONS[sym.id]?.[selectedLanguage] || sym.label;
-                    const sel = intakeData.chiefComplaint.includes(sym.label) || intakeData.chiefComplaint.includes(symLabel);
-                    return (
-                      <button key={sym.id} onClick={() => toggleSymptom(sym)}
-                        className={`p-4 rounded-2xl border-2 transition flex flex-col items-center justify-center space-y-1 ${sel ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                        <span className="text-3xl">{sym.icon}</span>
-                        <span className={`font-semibold text-sm text-center ${sel ? 'text-gray-900' : 'text-gray-600'}`}>{symLabel}</span>
-                        
-                      </button>
-                    );
-                  })}
+                className="h-full flex flex-col justify-between">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{t('symptomsTitle')}</h2>
+                  <p className="text-gray-500 mb-3 text-xs sm:text-sm">{t('symptomsSubtitle', selectedLanguage)}</p>
+                  
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-2.5 mb-3">
+                    {SYMPTOMS_LIST.map(sym => {
+                      const symLabel = SYMPTOM_TRANSLATIONS[sym.id]?.[selectedLanguage] || sym.label;
+                      const sel = intakeData.chiefComplaint.includes(sym.label) || intakeData.chiefComplaint.includes(symLabel);
+                      return (
+                        <button key={sym.id} onClick={() => toggleSymptom(sym)}
+                          className={`py-2 px-2 rounded-xl border-2 transition flex flex-col items-center justify-center space-y-0.5 ${sel ? 'border-brand-500 bg-brand-50 shadow-sm' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <span className="text-2xl">{sym.icon}</span>
+                          <span className={`font-semibold text-xs text-center line-clamp-1 ${sel ? 'text-gray-900 font-bold' : 'text-gray-600'}`}>{symLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Custom Disease / Symptoms Input & Selected Custom Chips */}
-                <div className="mb-4 bg-brand-50/50 p-3 rounded-2xl border border-brand-200/70">
+                {/* Unified Custom Disease & Voice Input Bar */}
+                <div className="bg-gray-50/90 p-2.5 rounded-2xl border border-gray-200 mt-1">
                   <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleVoiceInput}
+                      title={isListening ? t('listening', selectedLanguage) : t('tapToSpeak', selectedLanguage)}
+                      className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-md transition-all ${
+                        isListening ? 'bg-red-500 animate-pulse ring-4 ring-red-200' : 'bg-brand-600 hover:bg-brand-700 active:scale-95'
+                      }`}
+                    >
+                      <Mic className="w-5 h-5" />
+                    </button>
                     <input
                       type="text"
-                      value={customDiseaseInput}
-                      onChange={e => setCustomDiseaseInput(e.target.value)}
+                      value={intakeData.hpi || customDiseaseInput}
+                      onChange={e => {
+                        setCustomDiseaseInput(e.target.value);
+                        setIntakeData(prev => ({ ...prev, hpi: e.target.value }));
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          const val = customDiseaseInput.trim();
+                          const val = (customDiseaseInput || intakeData.hpi || '').trim();
                           if (val && !intakeData.chiefComplaint.includes(val)) {
-                            setIntakeData(prev => ({ ...prev, chiefComplaint: [...prev.chiefComplaint, val] }));
+                            setIntakeData(prev => ({ ...prev, chiefComplaint: [...prev.chiefComplaint, val], hpi: '' }));
                             setCustomDiseaseInput('');
                           }
                         }
                       }}
-                      placeholder={t('customDiseasePlaceholder', selectedLanguage) || 'Or type any custom disease / symptom (e.g. Ear pain, Dengue)...'}
-                      className="flex-1 bg-white px-3.5 py-2 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-brand-500 shadow-sm"
+                      placeholder={
+                        isListening
+                          ? t('listening', selectedLanguage)
+                          : (t('customDiseasePlaceholder', selectedLanguage) || 'Type symptom or tap mic to speak...')
+                      }
+                      className="flex-1 bg-white px-3.5 py-2.5 rounded-xl border border-gray-300 text-xs sm:text-sm focus:outline-none focus:border-brand-500 shadow-sm"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const val = customDiseaseInput.trim();
+                        const val = (customDiseaseInput || intakeData.hpi || '').trim();
                         if (val && !intakeData.chiefComplaint.includes(val)) {
-                          setIntakeData(prev => ({ ...prev, chiefComplaint: [...prev.chiefComplaint, val] }));
+                          setIntakeData(prev => ({ ...prev, chiefComplaint: [...prev.chiefComplaint, val], hpi: '' }));
                           setCustomDiseaseInput('');
                         }
                       }}
-                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold shadow-sm transition whitespace-nowrap"
+                      className="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-sm transition whitespace-nowrap active:scale-95"
                     >
                       + {t('add', selectedLanguage) || 'Add'}
                     </button>
@@ -1185,11 +1212,11 @@ export default function KioskFlow() {
 
                   {/* Display user's custom added symptoms if any */}
                   {intakeData.chiefComplaint.filter(c => !SYMPTOMS_LIST.some(s => s.label === c || (SYMPTOM_TRANSLATIONS[s.id] && Object.values(SYMPTOM_TRANSLATIONS[s.id]).includes(c)))).length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-brand-200/50">
+                    <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-200">
                       {intakeData.chiefComplaint
                         .filter(c => !SYMPTOMS_LIST.some(s => s.label === c || (SYMPTOM_TRANSLATIONS[s.id] && Object.values(SYMPTOM_TRANSLATIONS[s.id]).includes(c))))
                         .map((customSym, idx) => (
-                          <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white text-brand-800 border border-brand-300 shadow-sm">
+                          <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-brand-800 border border-brand-300 shadow-sm">
                             🏷️ {customSym}
                             <button
                               type="button"
@@ -1203,59 +1230,64 @@ export default function KioskFlow() {
                     </div>
                   )}
                 </div>
-                <div className="mt-auto bg-gray-50 p-5 rounded-2xl border border-gray-200 flex items-center space-x-5">
-                  <button onClick={handleVoiceInput}
-                    className={`shrink-0 w-16 h-16 rounded-full flex items-center justify-center text-white shadow-xl transition-all ${isListening ? 'bg-red-500 animate-pulse' : 'bg-brand-600 hover:bg-brand-700'}`}>
-                    <Mic className="w-8 h-8" />
-                  </button>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900 mb-1 text-sm">{isListening ? t('listening', selectedLanguage) : t('tapToSpeak', selectedLanguage)}</p>
-                    <textarea value={intakeData.hpi} onChange={e => setIntakeData({ ...intakeData, hpi: e.target.value })}
-                      className="w-full bg-white p-3 rounded-lg border border-gray-300 text-gray-700 text-sm h-16 resize-none"
-                      placeholder={t('voicePlaceholder')} />
-                  </div>
-                </div>
               </motion.div>
             )}
 
             {step === 4 && (
               <motion.div key="s4" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto">
-                <div className="flex items-center mb-2"><BrainCircuit className="w-6 h-6 text-brand-600 mr-2" /><h2 className="text-2xl font-bold text-gray-900">{t('aiHistoryTitle')}</h2></div>
-                <p className="text-gray-500 mb-6 text-sm">{t('aiHistorySubtitle')}</p>
+                className="h-full flex flex-col justify-between max-w-2xl mx-auto w-full">
                 {loadingHpi ? (
-                  <AIThinkingLoader chiefComplaint={intakeData.chiefComplaint} />
+                  <AIThinkingLoader chiefComplaint={intakeData.chiefComplaint} t={t} />
                 ) : hpiSubStep < hpiQuestions.length ? (
-                  <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-brand-600 uppercase">{t('questionCount', hpiSubStep + 1, hpiQuestions.length)}</span>
-                      <div className="flex space-x-1">{hpiQuestions.map((_, i) => <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < hpiSubStep ? 'bg-brand-600' : i === hpiSubStep ? 'bg-brand-400' : 'bg-gray-200'}`} />)}</div>
+                  <div className="h-full flex flex-col justify-between">
+                    {/* Compact Top Heading & Question Progress */}
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 shrink-0">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-brand-50 text-brand-600">
+                          <BrainCircuit className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">{t('aiHistoryTitle')}</h2>
+                          <p className="text-xs text-gray-500 hidden sm:block">{t('aiHistorySubtitle')}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
+                          {t('questionCount', hpiSubStep + 1, hpiQuestions.length)}
+                        </span>
+                        <div className="flex space-x-1">
+                          {hpiQuestions.map((_, i) => (
+                            <div key={i} className={`h-2 rounded-full transition-all ${i < hpiSubStep ? 'w-2 bg-brand-600' : i === hpiSubStep ? 'w-4 bg-brand-500' : 'w-2 bg-gray-200'}`} />
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    {/* Bilingual Question Box: Shows English first when non-English is selected */}
-                    <div className="bg-gradient-to-r from-brand-50 to-blue-50/50 border border-brand-200 rounded-xl p-5 shadow-sm">
+
+                    {/* Bilingual Question Box */}
+                    <div className="bg-gradient-to-r from-brand-50 to-blue-50/40 border border-brand-200 rounded-xl p-3 sm:p-3.5 shadow-2xs shrink-0 my-1">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           {selectedLanguage !== "English" && getQEng(hpiQuestions[hpiSubStep]) && (
-                            <p className="text-sm font-bold text-brand-700 mb-2 pb-1.5 border-b border-brand-200/80 tracking-wide uppercase">
+                            <p className="text-xs font-bold text-brand-700 mb-1 pb-1 border-b border-brand-200/80 tracking-wide uppercase truncate">
                               {getQEng(hpiQuestions[hpiSubStep])}
                             </p>
                           )}
-                          <p className="text-xl font-bold text-gray-900 leading-relaxed">
+                          <p className="text-base sm:text-lg font-bold text-gray-900 leading-snug">
                             {getQTrans(hpiQuestions[hpiSubStep])}
                           </p>
                         </div>
                         <button
                           type="button"
-                          title="Read Question and Options Aloud"
+                          title={t('readAloud')}
                           onClick={() => {
                             const currentItem = hpiQuestions[hpiSubStep];
                             const spText = getFullHpiSpeechText(currentItem, selectedLanguage);
                             speak(spText, selectedLanguage);
                           }}
-                          className="shrink-0 px-3 py-2 rounded-xl bg-white border border-brand-300 text-brand-700 hover:bg-brand-100 active:scale-95 shadow-sm transition-all flex items-center gap-1.5 text-xs font-semibold"
+                          className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-brand-300 text-brand-700 hover:bg-brand-100 active:scale-95 shadow-2xs transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
                         >
-                          <Volume2 className="w-4 h-4 text-brand-600 animate-pulse" />
-                          <span>Listen Options</span>
+                          <Volume2 className="w-3.5 h-3.5 text-brand-600 animate-pulse" />
+                          <span>{t('listenOptions')}</span>
                         </button>
                       </div>
                     </div>
@@ -1289,22 +1321,22 @@ export default function KioskFlow() {
 
                       if (qConfig.type === "scale") {
                         return (
-                          <div className="space-y-2">
-                            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
+                          <div className="space-y-1 shrink-0 my-0.5">
+                            <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
                               {qConfig.options.map(opt => {
                                 const isSelected = currentVal === opt.value;
                                 const toneStyles = {
                                   green: isSelected
-                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-lg scale-105 font-bold"
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-md scale-105 font-bold"
                                     : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-500 hover:text-white",
                                   amber: isSelected
-                                    ? "bg-amber-500 text-white border-amber-500 shadow-lg scale-105 font-bold"
+                                    ? "bg-amber-500 text-white border-amber-500 shadow-md scale-105 font-bold"
                                     : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-500 hover:text-white",
                                   orange: isSelected
-                                    ? "bg-orange-600 text-white border-orange-600 shadow-lg scale-105 font-bold"
+                                    ? "bg-orange-600 text-white border-orange-600 shadow-md scale-105 font-bold"
                                     : "bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-500 hover:text-white",
                                   red: isSelected
-                                    ? "bg-rose-600 text-white border-rose-600 shadow-lg scale-105 font-bold"
+                                    ? "bg-rose-600 text-white border-rose-600 shadow-md scale-105 font-bold"
                                     : "bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-600 hover:text-white",
                                 };
                                 return (
@@ -1312,14 +1344,14 @@ export default function KioskFlow() {
                                     key={opt.value}
                                     type="button"
                                     onClick={() => onSelectOption(opt.value)}
-                                    className={`py-3 px-2 rounded-xl border-2 text-center text-xl font-bold transition-all transform active:scale-95 ${toneStyles[opt.tone] || toneStyles.green}`}
+                                    className={`py-2 px-1 rounded-lg border-2 text-center text-base sm:text-lg font-bold transition-all transform active:scale-95 cursor-pointer ${toneStyles[opt.tone] || toneStyles.green}`}
                                   >
                                     {opt.label}
                                   </button>
                                 );
                               })}
                             </div>
-                            <div className="flex justify-between text-xs text-gray-500 px-1 font-medium">
+                            <div className="flex justify-between text-[11px] text-gray-500 px-1 font-medium">
                               <span className="text-emerald-700 font-semibold">{t("mild")} (1)</span>
                               <span className="text-amber-700 font-semibold">{t("moderate")} (5)</span>
                               <span className="text-rose-700 font-semibold">{t("extreme")} (10)</span>
@@ -1330,27 +1362,27 @@ export default function KioskFlow() {
 
                       if (qConfig.options && qConfig.options.length > 0) {
                         return (
-                          <div className="flex flex-wrap gap-2.5">
+                          <div className="flex flex-wrap gap-2 shrink-0 my-0.5">
                             {qConfig.options.map(opt => {
                               const isSelected = currentVal === opt.label || currentVal.includes(opt.label);
                               const toneStyles = {
                                 green: isSelected
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-[1.02]"
                                   : "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-600 hover:text-white",
                                 red: isSelected
-                                  ? "bg-rose-600 text-white border-rose-600 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-rose-600 text-white border-rose-600 shadow-sm font-bold scale-[1.02]"
                                   : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-600 hover:text-white",
                                 amber: isSelected
-                                  ? "bg-amber-500 text-white border-amber-500 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-amber-500 text-white border-amber-500 shadow-sm font-bold scale-[1.02]"
                                   : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-500 hover:text-white",
                                 orange: isSelected
-                                  ? "bg-orange-500 text-white border-orange-500 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-orange-500 text-white border-orange-500 shadow-sm font-bold scale-[1.02]"
                                   : "bg-orange-50 text-orange-800 border-orange-300 hover:bg-orange-500 hover:text-white",
                                 blue: isSelected
-                                  ? "bg-blue-600 text-white border-blue-600 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-blue-600 text-white border-blue-600 shadow-sm font-bold scale-[1.02]"
                                   : "bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-600 hover:text-white",
                                 slate: isSelected
-                                  ? "bg-gray-700 text-white border-gray-700 shadow-md font-bold scale-[1.02]"
+                                  ? "bg-gray-700 text-white border-gray-700 shadow-sm font-bold scale-[1.02]"
                                   : "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-200",
                               };
                               return (
@@ -1358,7 +1390,7 @@ export default function KioskFlow() {
                                   key={opt.label}
                                   type="button"
                                   onClick={() => onSelectOption(opt.label)}
-                                  className={`px-4 py-2.5 rounded-xl border-2 text-sm font-medium transition-all transform active:scale-95 flex items-center space-x-1.5 ${toneStyles[opt.tone] || toneStyles.slate}`}
+                                  className={`px-3.5 py-1.5 rounded-xl border-2 text-xs sm:text-sm font-medium transition-all transform active:scale-95 flex items-center space-x-1.5 cursor-pointer ${toneStyles[opt.tone] || toneStyles.slate}`}
                                 >
                                   {opt.icon && <span className="mr-1">{opt.icon}</span>}
                                   <span>{opt.label}</span>
@@ -1371,12 +1403,20 @@ export default function KioskFlow() {
                       return null;
                     })()}
 
-                    <div className="flex items-center space-x-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <button onClick={handleHpiVoiceInput}
-                        className={`shrink-0 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg transition-all ${isListening ? "bg-red-500 animate-pulse ring-4 ring-red-200" : "bg-brand-600 hover:bg-brand-700"}`}>
-                        <Mic className="w-7 h-7" />
+                    {/* Compact Voice Mic & Answer Input Bar */}
+                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 shrink-0 my-0.5">
+                      <button
+                        type="button"
+                        onClick={handleHpiVoiceInput}
+                        title={isListening ? "Listening..." : "Tap to Speak"}
+                        className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm transition-all cursor-pointer ${
+                          isListening ? "bg-red-500 animate-pulse ring-4 ring-red-200" : "bg-brand-600 hover:bg-brand-700 active:scale-95"
+                        }`}
+                      >
+                        <Mic className="w-5 h-5" />
                       </button>
-                      <textarea
+                      <input
+                        type="text"
                         value={hpiAnswers[getQEng(hpiQuestions[hpiSubStep]) || getQTrans(hpiQuestions[hpiSubStep])] || ""}
                         onChange={e => {
                           const val = e.target.value;
@@ -1386,19 +1426,37 @@ export default function KioskFlow() {
                           const hpiText = Object.entries(newAnswers).map(([q, a]) => `Q: ${q}\nA: ${a}`).join("\n\n");
                           setIntakeData(p => ({ ...p, hpi: hpiText }));
                         }}
-                        className="flex-1 bg-white p-3 rounded-lg border border-gray-300 text-gray-700 text-sm h-16 resize-none"
-                        placeholder={isListening ? t("listening", selectedLanguage) : t("answerPlaceholder")} />
+                        className="flex-1 bg-white px-3 py-2 rounded-lg border border-gray-300 text-gray-800 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium"
+                        placeholder={isListening ? t("listening", selectedLanguage) : t("answerPlaceholder")}
+                      />
                     </div>
-                    <div className="flex space-x-3">
-                      <button onClick={() => {
-                        const qKey = getQEng(hpiQuestions[hpiSubStep]) || getQTrans(hpiQuestions[hpiSubStep]);
-                        handleHpiAnswer(hpiQuestions[hpiSubStep], hpiAnswers[qKey] || "Not sure");
-                      }}
-                        className="flex-1 bg-brand-600 text-white py-3 rounded-xl font-bold hover:bg-brand-700 transition flex items-center justify-center">
-                        {hpiSubStep < hpiQuestions.length - 1 ? <><ChevronRight className="w-5 h-5 mr-1" />{t("nextQuestion")}</> : <><CheckCircle className="w-5 h-5 mr-1" />{t("done")}</>}
+
+                    {/* Compact Next Question & Skip Actions */}
+                    <div className="flex space-x-2.5 shrink-0 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const qKey = getQEng(hpiQuestions[hpiSubStep]) || getQTrans(hpiQuestions[hpiSubStep]);
+                          handleHpiAnswer(hpiQuestions[hpiSubStep], hpiAnswers[qKey] || "Not sure");
+                        }}
+                        className="flex-1 bg-brand-600 text-white py-2.5 px-4 rounded-xl font-bold hover:bg-brand-700 active:scale-98 transition shadow-sm flex items-center justify-center text-sm cursor-pointer"
+                      >
+                        {hpiSubStep < hpiQuestions.length - 1 ? (
+                          <><ChevronRight className="w-4 h-4 mr-1" />{t("nextQuestion")}</>
+                        ) : (
+                          <><CheckCircle className="w-4 h-4 mr-1" />{t("done")}</>
+                        )}
                       </button>
-                      <button onClick={() => { if (hpiSubStep < hpiQuestions.length - 1) setHpiSubStep(s => s + 1); else setStep(intakeData.mode === "AYUSH" ? 4.5 : 5); }}
-                        className="px-4 bg-gray-100 text-gray-600 py-3 rounded-xl font-medium hover:bg-gray-200 transition text-sm">{t('skip')}</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (hpiSubStep < hpiQuestions.length - 1) setHpiSubStep(s => s + 1);
+                          else setStep(intakeData.mode === "AYUSH" ? 4.5 : 5);
+                        }}
+                        className="px-4 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-medium hover:bg-gray-200 transition text-xs cursor-pointer"
+                      >
+                        {t('skip')}
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -1413,24 +1471,7 @@ export default function KioskFlow() {
 
             {step === 4.5 && (
               <motion.div key="s45" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto overflow-y-auto pr-1">
-                <div className="flex items-center justify-between mb-1">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Dashavidha Pariksha
-                    {selectedLanguage !== 'English' && <span className="text-emerald-700 ml-2 font-semibold text-lg">({t('ayushTitleSection') || 'দশবিধ পরীক্ষা'})</span>}
-                  </h2>
-                </div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-gray-500 text-sm font-medium">
-                    {t('questionCount', Math.min(ayushSubStep + 1, ayushQuestions.length), ayushQuestions.length)}
-                  </p>
-                  <div className="flex space-x-1">
-                    {ayushQuestions.map((_, i) => (
-                      <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < ayushSubStep ? 'bg-emerald-600' : i === ayushSubStep ? 'bg-emerald-400 ring-2 ring-emerald-200' : 'bg-gray-200'}`} />
-                    ))}
-                  </div>
-                </div>
-
+                className="h-full flex flex-col justify-between max-w-2xl mx-auto w-full">
                 {ayushQuestions.length === 0 ? (
                   <div className="text-center text-gray-400 py-12 flex flex-col items-center">
                     <Loader className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
@@ -1443,16 +1484,42 @@ export default function KioskFlow() {
                   const selectedVal = intakeData.ayushData[q.field] || '';
 
                   return (
-                    <div className="space-y-4">
+                    <div className="h-full flex flex-col justify-between">
+                      {/* Compact AYUSH Header */}
+                      <div className="flex items-center justify-between pb-2 border-b border-gray-100 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h2 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">
+                              Dashavidha Pariksha
+                              {selectedLanguage !== 'English' && <span className="text-emerald-700 ml-1.5 font-semibold text-sm">({t('ayushTitleSection') || 'দশবিধ পরীক্ষা'})</span>}
+                            </h2>
+                            <p className="text-xs text-gray-500 hidden sm:block">Ayurvedic Ten-Fold Clinical Assessment</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            {t('questionCount', Math.min(ayushSubStep + 1, ayushQuestions.length), ayushQuestions.length)}
+                          </span>
+                          <div className="flex space-x-1">
+                            {ayushQuestions.map((_, i) => (
+                              <div key={i} className={`h-2 rounded-full transition-all ${i < ayushSubStep ? 'w-2 bg-emerald-600' : i === ayushSubStep ? 'w-4 bg-emerald-500' : 'w-2 bg-gray-200'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Bilingual Ayurvedic Question Box */}
-                      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-5 rounded-2xl border border-emerald-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
+                      <div className="bg-gradient-to-r from-emerald-50 to-teal-50/50 p-3 sm:p-3.5 rounded-xl border border-emerald-200 shadow-2xs shrink-0 my-1">
+                        <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-100/80 px-2 py-0.5 rounded-full">
                               {transLabel}
                             </span>
                             {selectedLanguage !== 'English' && (
-                              <span className="text-xs text-gray-400 font-medium">
+                              <span className="text-xs text-gray-500 font-medium">
                                 {q.label}
                               </span>
                             )}
@@ -1464,21 +1531,21 @@ export default function KioskFlow() {
                             title="Listen again"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
-                            <span>{selectedLanguage === 'Bengali' ? 'পুনরায় শুনুন' : selectedLanguage === 'Hindi' ? 'पुनः सुनें' : 'Listen'}</span>
+                            <span>{selectedLanguage === 'Bengali' ? 'পুনরায় শুনুন' : selectedLanguage === 'Hindi' ? 'पुনঃ सुनें' : 'Listen'}</span>
                           </button>
                         </div>
                         {selectedLanguage !== 'English' && (
-                          <p className="text-sm font-semibold text-emerald-800 mb-1.5 pb-1 border-b border-emerald-200/60">
+                          <p className="text-xs font-semibold text-emerald-800 mb-1 pb-1 border-b border-emerald-200/60">
                             {q.question}
                           </p>
                         )}
-                        <p className="text-xl font-bold text-gray-900 leading-snug">
+                        <p className="text-base sm:text-lg font-bold text-gray-900 leading-snug">
                           {transQ}
                         </p>
                       </div>
 
-                      {/* Options List */}
-                      <div className="space-y-2.5 max-h-[30vh] overflow-y-auto pr-1">
+                      {/* Options Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 shrink-0 my-0.5">
                         {q.options.map(opt => {
                           const transOpt = getAyushOptionTrans(q.field, opt, selectedLanguage);
                           const isSelected = selectedVal === opt || selectedVal === transOpt;
@@ -1488,35 +1555,35 @@ export default function KioskFlow() {
                               key={opt}
                               type="button"
                               onClick={() => handleAyushAnswer(q.field, opt)}
-                              className={`w-full text-left px-5 py-3.5 rounded-xl border-2 transition-all flex flex-col justify-center ${
+                              className={`w-full text-left px-3.5 py-2.5 rounded-xl border-2 transition-all flex items-center justify-between cursor-pointer ${
                                 isSelected
-                                  ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-md ring-2 ring-emerald-200 font-semibold'
+                                  ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-300 font-semibold'
                                   : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/40 text-gray-800 font-medium'
                               }`}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="text-base text-gray-900 font-semibold">{transOpt}</span>
-                                {isSelected && <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 ml-2" />}
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-sm text-gray-900 font-semibold truncate">{transOpt}</span>
+                                {selectedLanguage !== 'English' && transOpt !== opt && (
+                                  <span className="text-[11px] text-gray-500 truncate">{opt}</span>
+                                )}
                               </div>
-                              {selectedLanguage !== 'English' && transOpt !== opt && (
-                                <span className="text-xs text-gray-500 mt-0.5">{opt}</span>
-                              )}
+                              {isSelected && <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 ml-2" />}
                             </button>
                           );
                         })}
                       </div>
 
                       {/* Voice Mic & Transcription Input Bar */}
-                      <div className="flex items-center space-x-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 shrink-0 my-0.5">
                         <button
                           type="button"
                           onClick={handleAyushVoiceInput}
-                          className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-all ${
-                            isListening ? 'bg-red-500 animate-pulse ring-4 ring-red-200' : 'bg-emerald-600 hover:bg-emerald-700'
+                          className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm transition-all cursor-pointer ${
+                            isListening ? 'bg-red-500 animate-pulse ring-4 ring-red-200' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'
                           }`}
                           title={`Speak in ${selectedLanguage}`}
                         >
-                          <Mic className="w-6 h-6" />
+                          <Mic className="w-5 h-5" />
                         </button>
                         <input
                           type="text"
@@ -1526,23 +1593,23 @@ export default function KioskFlow() {
                             setIntakeData(p => ({ ...p, ayushData: { ...p.ayushData, [q.field]: val } }));
                           }}
                           placeholder={isListening ? t('listening', selectedLanguage) : t('answerPlaceholder')}
-                          className="flex-1 bg-white px-3.5 py-2.5 rounded-lg border border-gray-300 text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                          className="flex-1 bg-white px-3 py-2 rounded-lg border border-gray-300 text-gray-800 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-medium"
                         />
                       </div>
 
                       {/* Next / Skip Buttons */}
-                      <div className="flex space-x-3 pt-1">
+                      <div className="flex space-x-2.5 shrink-0 pt-1">
                         <button
                           type="button"
                           onClick={() => {
                             handleAyushAnswer(q.field, selectedVal || q.options[0]);
                           }}
-                          className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition flex items-center justify-center shadow"
+                          className="flex-1 bg-emerald-600 text-white py-2.5 px-4 rounded-xl font-bold hover:bg-emerald-700 active:scale-98 transition shadow-sm flex items-center justify-center text-sm cursor-pointer"
                         >
                           {ayushSubStep < ayushQuestions.length - 1 ? (
-                            <><ChevronRight className="w-5 h-5 mr-1" />{t('nextQuestion')}</>
+                            <><ChevronRight className="w-4 h-4 mr-1" />{t('nextQuestion')}</>
                           ) : (
-                            <><CheckCircle className="w-5 h-5 mr-1" />{t('done')}</>
+                            <><CheckCircle className="w-4 h-4 mr-1" />{t('done')}</>
                           )}
                         </button>
                         <button
@@ -1559,7 +1626,7 @@ export default function KioskFlow() {
                               setStep(5);
                             }
                           }}
-                          className="px-4 bg-gray-100 text-gray-600 py-3 rounded-xl font-medium hover:bg-gray-200 transition text-sm"
+                          className="px-4 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-medium hover:bg-gray-200 transition text-xs cursor-pointer"
                         >
                           {t('skip')}
                         </button>
@@ -1578,28 +1645,28 @@ export default function KioskFlow() {
 
             {step === 5 && (
               <motion.div key="s5" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto">
-                <h2 className="text-3xl font-bold text-gray-900 mb-1 text-center">Scan Past Records</h2>
-                <p className="text-gray-500 mb-6 text-center text-sm">Upload previous prescriptions or lab reports (max 10 MB).</p>
+                className="h-full flex flex-col justify-start sm:justify-center max-w-2xl mx-auto py-1">
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 text-center">Scan Past Records</h2>
+                <p className="text-gray-500 mb-4 text-center text-xs sm:text-sm">Upload previous prescriptions or lab reports (max 10 MB).</p>
 
                 {/* Two-column layout: tap-upload + QR panel */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
 
                   {/* ── Left: existing tap-to-upload (unchanged) ── */}
                   <div>
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">Tap to upload here</p>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 text-center">Tap to upload here</p>
                     <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf" style={{ display: 'none' }} />
                     <div
                       id="kiosk-upload-dropzone"
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-4 border-dashed border-gray-300 rounded-2xl p-8 flex flex-col items-center justify-center bg-gray-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer group min-h-[180px]"
+                      className="border-3 border-dashed border-gray-300 rounded-2xl p-5 flex flex-col items-center justify-center bg-gray-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer group min-h-[160px]"
                     >
                       {isUploading
                         ? <div className="text-brand-600 text-sm font-bold animate-pulse text-center">Processing via OCR…</div>
                         : <>
-                            <FileUp className="w-14 h-14 text-gray-400 group-hover:text-brand-500 mb-3" />
+                            <FileUp className="w-12 h-12 text-gray-400 group-hover:text-brand-500 mb-2" />
                             <p className="text-base font-bold text-gray-700 group-hover:text-brand-700 text-center">Tap to Upload</p>
-                            <p className="text-gray-500 mt-1 text-xs text-center">Image or PDF, max 10 MB</p>
+                            <p className="text-gray-500 mt-0.5 text-xs text-center">Image or PDF, max 10 MB</p>
                           </>
                       }
                     </div>
@@ -1607,8 +1674,8 @@ export default function KioskFlow() {
 
                   {/* ── Right: QR code panel ── */}
                   <div>
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">Or scan QR with your phone</p>
-                    <div className="border-2 border-gray-200 rounded-2xl p-4 flex flex-col items-center justify-center bg-gray-50 min-h-[180px]">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 text-center">Or scan QR with your phone</p>
+                    <div className="border-2 border-gray-200 rounded-2xl p-4 flex flex-col items-center justify-center bg-gray-50 min-h-[160px]">
 
                       {/* Loading spinner */}
                       {qrLoading && !qrError && (
@@ -1621,8 +1688,8 @@ export default function KioskFlow() {
                       {/* Localhost guard warning */}
                       {qrError === 'localhost_guard' && (
                         <div className="text-center px-2">
-                          <div className="text-2xl mb-2">⚠️</div>
-                          <p className="text-xs font-bold text-amber-700 mb-1">QR handoff not configured</p>
+                          <div className="text-2xl mb-1">⚠️</div>
+                          <p className="text-xs font-bold text-amber-700 mb-0.5">QR handoff not configured</p>
                           <p className="text-xs text-amber-600 leading-relaxed">
                             Set <code className="bg-amber-100 px-1 rounded">KIOSK_LAN_HOST</code> in <code className="bg-amber-100 px-1 rounded">backend/.env</code> and restart the server.
                           </p>
@@ -1632,7 +1699,7 @@ export default function KioskFlow() {
                       {/* Generic fetch error */}
                       {qrError === 'fetch_error' && (
                         <div className="text-center px-2">
-                          <div className="text-2xl mb-2">🔌</div>
+                          <div className="text-2xl mb-1">🔌</div>
                           <p className="text-xs text-red-600">Could not generate QR. Use tap-to-upload instead.</p>
                         </div>
                       )}
@@ -1643,11 +1710,11 @@ export default function KioskFlow() {
                           <img
                             src={qrDataUrl}
                             alt="Scan this QR code with your phone to upload a document"
-                            className="w-36 h-36 rounded-xl shadow-sm"
+                            className="w-32 h-32 rounded-xl shadow-sm"
                           />
-                          <p className="text-xs text-gray-500 mt-2 text-center">Scan with your phone camera</p>
+                          <p className="text-xs text-gray-500 mt-1 text-center">Scan with your phone camera</p>
                           {intakeData.documents.length === 0 && (
-                            <div className="flex items-center space-x-1.5 mt-2">
+                            <div className="flex items-center space-x-1.5 mt-1.5">
                               <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75" />
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500" />
@@ -1663,10 +1730,10 @@ export default function KioskFlow() {
 
                 {/* Confirmation bar — full width, shown when any path produces a document */}
                 {intakeData.documents.length > 0 && (
-                  <div className="mt-5 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium flex items-center justify-center text-sm">
+                    <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                     {intakeData.documents.length} document(s) uploaded.
-                    {ocrResult && <span className="ml-2 text-sm">({ocrResult.medications?.length || 0} meds, {ocrResult.labs?.length || 0} labs extracted)</span>}
+                    {ocrResult && <span className="ml-2 text-xs">({ocrResult.medications?.length || 0} meds, {ocrResult.labs?.length || 0} labs extracted)</span>}
                   </div>
                 )}
               </motion.div>
@@ -1674,42 +1741,42 @@ export default function KioskFlow() {
 
             {step === 6 && (
               <motion.div key="s6" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }}
-                className="h-full flex flex-col justify-center max-w-2xl mx-auto">
-                <div className="flex items-center mb-2"><Sparkles className="w-6 h-6 text-brand-600 mr-2" /><h2 className="text-3xl font-bold text-gray-900">{t('chooseDoctorTitle')}</h2></div>
-                <p className="text-gray-500 mb-2 text-center">{t('chooseDoctorSubtitle')}</p>
-                {kioskHospitalName && <p className="text-xs text-center font-semibold mb-2 text-brand-600">Showing Doctors at {kioskHospitalName}</p>}
-                {!kioskHospitalName && isSelfServed && <p className="text-xs text-center font-semibold mb-2 text-purple-600">Displaying Independent / Teleconsult Physicians</p>}
+                className="h-full flex flex-col justify-start max-w-2xl mx-auto py-1">
+                <div className="flex items-center mb-1"><Sparkles className="w-5 h-5 text-brand-600 mr-2" /><h2 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('chooseDoctorTitle')}</h2></div>
+                <p className="text-gray-500 mb-2 text-xs sm:text-sm">{t('chooseDoctorSubtitle')}</p>
+                {kioskHospitalName && <p className="text-xs font-semibold mb-1.5 text-brand-600">Showing Doctors at {kioskHospitalName}</p>}
+                {!kioskHospitalName && isSelfServed && <p className="text-xs font-semibold mb-1.5 text-purple-600">Displaying Independent / Teleconsult Physicians</p>}
                 {loadingRec && (
-                  <div className="flex items-center justify-center py-3 space-x-2 text-brand-600 text-sm mb-2">
+                  <div className="flex items-center justify-center py-2 space-x-2 text-brand-600 text-sm mb-1.5">
                     <BrainCircuit className="w-4 h-4 animate-pulse" /><span>AI is analysing your symptoms...</span>
                   </div>
                 )}
                 {recRationale && (
-                  <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 mb-4 flex items-start">
+                  <div className="bg-brand-50 border border-brand-200 rounded-xl p-2.5 mb-3 flex items-start">
                     <BrainCircuit className="w-4 h-4 text-brand-600 mr-2 mt-0.5 shrink-0" />
                     <p className="text-xs text-brand-800"><strong>AI Recommendation:</strong> {recRationale}</p>
                   </div>
                 )}
                 {filteredDoctors.length === 0 && displayDoctors.length > 0 && (
-                  <div className="col-span-2 text-center text-xs font-semibold py-2 px-4 mb-3 bg-amber-50 text-amber-900 rounded-xl border border-amber-200">
+                  <div className="col-span-2 text-center text-xs font-semibold py-1.5 px-3 mb-2 bg-amber-50 text-amber-900 rounded-xl border border-amber-200">
                     ℹ️ {t('showingHospitalDoctors')}
                   </div>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {displayDoctors.map(doc => {
                     const isRec = doc.id === recommendedDoctorId;
                     const isSel = selectedDoctor === doc.id;
                     return (
                       <div key={doc.id} onClick={() => setSelectedDoctor(doc.id)}
-                        className={`p-4 rounded-xl border-2 cursor-pointer flex items-center transition-colors relative ${isSel ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'}`}>
+                        className={`p-3.5 rounded-xl border-2 cursor-pointer flex items-center transition-colors relative ${isSel ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'}`}>
                         {isRec && <span className="absolute -top-2 -right-2 bg-brand-600 text-white text-xs px-2 py-0.5 rounded-full font-bold flex items-center"><Sparkles className="w-3 h-3 mr-1" />{t('aiPick')}</span>}
-                        <UserSquare className={`w-12 h-12 mr-4 ${isSel ? 'text-brand-600' : 'text-gray-400'}`} />
-                        <div><h3 className={`font-bold text-lg ${isSel ? 'text-brand-900' : 'text-gray-900'}`}>{doc.name}</h3><p className="text-sm text-gray-500">{doc.specialization}</p></div>
+                        <UserSquare className={`w-10 h-10 mr-3 ${isSel ? 'text-brand-600' : 'text-gray-400'}`} />
+                        <div><h3 className={`font-bold text-base ${isSel ? 'text-brand-900' : 'text-gray-900'}`}>{doc.name}</h3><p className="text-xs text-gray-500">{doc.specialization}</p></div>
                       </div>
                     );
                   })}
                   {displayDoctors.length === 0 && (
-                    <div className="col-span-2 text-center text-gray-500 py-8 bg-gray-50 rounded-xl border border-gray-200">{t('noDoctorsFound')}</div>
+                    <div className="col-span-2 text-center text-gray-500 py-6 bg-gray-50 rounded-xl border border-gray-200 text-sm">{t('noDoctorsFound')}</div>
                   )}
                 </div>
               </motion.div>
