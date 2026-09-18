@@ -210,10 +210,11 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
     if (!s) return;
     if (!(await assertAccess(req, res, s))) return;
     const patient = await Patient.findById(s.patient_id);
+    if (!patient) return res.status(404).json({ error: "Patient record not found" });
     const docs    = await Document.find({ session_id: s.id });
 
     const { doctor_id } = req.body || {};
-    const assignedDocId = doctor_id || s.doctor_id || patient.doctor_id || null;
+    const assignedDocId = doctor_id || s.doctor_id || patient?.doctor_id || null;
 
     const submitted_at = new Date().toISOString();
     const sessionForBundle = { ...s.toObject(), id: s.id, doctor_id: assignedDocId, hpi_details: Array.isArray(s.hpi_details) ? s.hpi_details : [] };

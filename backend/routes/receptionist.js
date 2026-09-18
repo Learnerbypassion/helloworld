@@ -138,6 +138,10 @@ router.post(
               vitals_status: "in_progress",
               vitals_claimed_at: { $lt: staleThreshold },
             },
+            {
+              vitals_status: "in_progress",
+              vitals_claimed_by: req.user.id,
+            },
           ],
         },
         {

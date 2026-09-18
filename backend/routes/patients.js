@@ -103,7 +103,7 @@ router.get("/:id", requireAuth, async (req, res) => {
     if (req.user.role === "patient" && req.user.id !== patient.id && req.user.id !== patient._id.toString()) {
       return res.status(403).json({ error: "Cannot view another patient's record" });
     }
-    if (req.user.role !== "patient" && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
+    if (req.user.role !== "patient" && req.user.hospital_id && patient.hospital_id && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
       return res.status(403).json({ error: "Patient belongs to a different hospital" });
     }
     res.json(serializePatient(patient));
@@ -120,7 +120,7 @@ router.get("/:id/sessions", requireAuth, async (req, res) => {
     if (req.user.role === "patient" && req.user.id !== patient.id && req.user.id !== patient._id.toString()) {
       return res.status(403).json({ error: "Cannot view another patient's sessions" });
     }
-    if (req.user.role !== "patient" && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
+    if (req.user.role !== "patient" && req.user.hospital_id && patient.hospital_id && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
       return res.status(403).json({ error: "Patient belongs to a different hospital" });
     }
     const sessions = await IntakeSession.find({ patient_id: patient.id }).sort({ created_at: -1 });
@@ -187,7 +187,7 @@ router.patch("/:id", requireAuth, async (req, res) => {
     if (req.user.role === "patient" && req.user.id !== patient.id && req.user.id !== patient._id.toString()) {
       return res.status(403).json({ error: "Cannot update another patient's record" });
     }
-    if ((req.user.role === "hospital_admin" || req.user.role === "receptionist") && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
+    if ((req.user.role === "hospital_admin" || req.user.role === "receptionist") && req.user.hospital_id && patient.hospital_id && req.user.hospital_id.toString() !== patient.hospital_id.toString()) {
       return res.status(403).json({ error: "Patient belongs to a different hospital" });
     }
     if (req.user.role === "doctor") {

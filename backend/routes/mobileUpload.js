@@ -27,19 +27,46 @@ const { IntakeSession } = require("../db");
 const { requireAuth }   = require("../auth");
 const { handleDocumentUpload } = require("../documentUpload");
 
+const os = require("os");
+
 const router = express.Router();
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const PORT          = process.env.PORT          || 8000; // backend API port
+const FRONTEND_PORT = process.env.FRONTEND_PORT || 5173; // Vite dev / static-serve port
 
-// Read once at module load — both token-issuance and QR routes use the same
-// variables, so they can never disagree within a single server process.
-const KIOSK_LAN_HOST  = process.env.KIOSK_LAN_HOST  || "localhost";
-const PORT            = process.env.PORT            || 8000; // backend API port
-const FRONTEND_PORT   = process.env.FRONTEND_PORT   || 5173; // Vite dev / static-serve port
-// The QR URL points at the FRONTEND (React app), not the backend API.
-// In dev: Vite runs on 5173. In production: set FRONTEND_PORT to whatever serves the built app.
+/**
+ * Dynamically resolves the machine's active LAN IPv4 address so phones on WiFi
+ * can always connect without requiring manual .env editing on network changes.
+ */
+function getLanHost() {
+  const envHost = (process.env.KIOSK_LAN_HOST || "").trim();
+  const interfaces = os.networkInterfaces();
+  const candidates = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        candidates.push({ name, address: iface.address });
+      }
+    }
+  }
+
+  // Filter out host-only / virtual adapters (e.g. VirtualBox, WSL, vEthernet)
+  const physical = candidates.find(
+    c => !/virtual|vethernet|vbox|loopback|pseudo/i.test(c.name) && !c.address.startsWith("192.168.56.")
+  );
+  const detectedIp = physical ? physical.address : (candidates[0]?.address || "localhost");
+
+  // If envHost is set to a valid address that is currently active on this machine, honor it
+  if (envHost && envHost !== "localhost" && envHost !== "127.0.0.1") {
+    const isCurrentlyActive = candidates.some(c => c.address === envHost);
+    if (isCurrentlyActive) return envHost;
+  }
+
+  return detectedIp;
+}
 
 // ─── Shared token validator ────────────────────────────────────────────────────
 
@@ -117,13 +144,14 @@ router.post("/sessions/:id/upload-token", requireAuth, async (req, res) => {
       upload_token_used:       false,
     });
 
+    const lanHost = getLanHost();
     res.json({
       token,
       expires_at,
-      kiosk_lan_host: KIOSK_LAN_HOST,
+      kiosk_lan_host: lanHost,
       port:           PORT,
       frontend_port:  FRONTEND_PORT,
-      is_localhost:   KIOSK_LAN_HOST === "localhost",
+      is_localhost:   lanHost === "localhost" || lanHost === "127.0.0.1",
     });
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to generate upload token" });
@@ -154,9 +182,8 @@ router.get("/mobile-upload-qr/:token", async (req, res) => {
       return res.status(410).json({ error: "Token expired" });
     }
 
-    // The QR URL must point at the FRONTEND port (Vite/static), not the backend API port.
-    // Phone scans QR → opens React app → MobileUpload.jsx → calls backend API separately.
-    const mobileUrl = `http://${KIOSK_LAN_HOST}:${FRONTEND_PORT}/dhanvantari/mobile-upload/${req.params.token}`;
+    const lanHost = getLanHost();
+    const mobileUrl = `http://${lanHost}:${FRONTEND_PORT}/dhanvantari/mobile-upload/${req.params.token}`;
 
     const qrDataUrl = await QRCode.toDataURL(mobileUrl, {
       errorCorrectionLevel: "M",

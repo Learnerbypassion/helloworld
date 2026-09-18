@@ -39,6 +39,10 @@ router.get("/stats", requireAuth, requireRole("doctor", "hospital_admin"), async
       if (myPatientIds.length > 0) {
         sessionConditions.push({ patient_id: { $in: myPatientIds } });
       }
+      if (hospId) {
+        sessionConditions.push({ hospital_id: hospId, doctor_id: null });
+        sessionConditions.push({ hospital_id: hospId, doctor_id: { $exists: false } });
+      }
 
       const queue_count = await IntakeSession.countDocuments({
         status: "submitted",
@@ -121,6 +125,10 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
       }
       if (myPatientIds.length > 0) {
         sessionOrConditions.push({ patient_id: { $in: myPatientIds } });
+      }
+      if (hospId) {
+        sessionOrConditions.push({ hospital_id: hospId, doctor_id: null });
+        sessionOrConditions.push({ hospital_id: hospId, doctor_id: { $exists: false } });
       }
 
       query = {
@@ -414,11 +422,25 @@ router.post("/sessions/:id/review", requireAuth, requireRole("doctor"), async (r
         }
       }
 
+      if (!hospName && req.user.hospital_id) {
+        const userHosp = await Hospital.findById(req.user.hospital_id).catch(() => null);
+        if (userHosp && userHosp.name) {
+          hospName = userHosp.name;
+        }
+      }
+
+      if (!hospName) {
+        const anyHosp = await Hospital.findOne().catch(() => null);
+        if (anyHosp && anyHosp.name) {
+          hospName = anyHosp.name;
+        }
+      }
+
       if (!hospName) {
         hospName = req.user.hospital_name ||
           (hospId === "apollo" ? "Apollo Multispeciality Hospital, Delhi" :
            hospId === "aiims" ? "AIIMS New Delhi, OPD Ward" :
-           (hospitals[0]?.name || "City Care General Hospital"));
+           "City Care General Hospital");
       }
 
       const pushPayload = {

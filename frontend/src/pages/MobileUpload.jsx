@@ -14,13 +14,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 
 // When the phone opens this page via the QR code, window.location.hostname is the
-// kiosk's LAN IP (e.g. 192.168.0.107). Use that to build the backend API URL so
-// fetch calls from the phone reach the correct machine, not localhost.
-const _viteApiUrl = import.meta.env.VITE_API_URL;
+// kiosk's LAN IP (e.g. 192.168.0.108). Always prioritize window.location.hostname
+// when accessed from a mobile browser over LAN so fetch calls reach the kiosk server.
 const _backendPort = import.meta.env.VITE_BACKEND_PORT || '8000';
-const API_BASE = _viteApiUrl
-  ? _viteApiUrl
-  : `http://${window.location.hostname}:${_backendPort}/api`;
+const _isLocalhost = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const API_BASE = (!_isLocalhost && typeof window !== 'undefined' && window.location.hostname)
+  ? `http://${window.location.hostname}:${_backendPort}/api`
+  : (import.meta.env.VITE_API_URL || `http://localhost:${_backendPort}/api`);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

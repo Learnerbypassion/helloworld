@@ -441,7 +441,8 @@ router.post("/patient/kiosk-checkin", async (req, res) => {
       }
     } else {
       // New walk-in kiosk patient
-      const cleanPhone = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "9876543210";
+      const digits = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "";
+      const cleanPhone = digits.length >= 10 ? digits : "9876543210";
       const abhaVal = abha_id || abha_demographics?.abha_id || null;
       patient = await Patient.create({
         hospital_id: assignedHospId,
