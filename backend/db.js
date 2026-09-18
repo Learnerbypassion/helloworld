@@ -142,6 +142,22 @@ const IntakeSessionSchema = new mongoose.Schema(
     upload_token: { type: String, index: true },
     upload_token_expires_at: { type: Date },
     upload_token_used: { type: Boolean, default: false }, // reserved for future single-use mode
+    // Pre-consultation vitals (recorded by receptionist at vitals station)
+    vitals: {
+      temperature:  { type: Number, default: null }, // °F
+      bp_systolic:  { type: Number, default: null }, // mmHg
+      bp_diastolic: { type: Number, default: null }, // mmHg
+      pulse:        { type: Number, default: null }, // bpm
+      spo2:         { type: Number, default: null }, // %
+      weight:       { type: Number, default: null }, // kg
+      recorded_by:  { type: mongoose.Schema.Types.Mixed, ref: "Receptionist", default: null },
+      recorded_at:  { type: Date, default: null },
+    },
+    // "pending" → "in_progress" → "recorded"
+    vitals_status:     { type: String, enum: ["pending", "in_progress", "recorded"], default: "pending" },
+    // Which receptionist currently holds the lock for taking vitals
+    vitals_claimed_by: { type: mongoose.Schema.Types.Mixed, ref: "Receptionist", default: null },
+    vitals_claimed_at: { type: Date, default: null },
   },
   schemaOptions
 );

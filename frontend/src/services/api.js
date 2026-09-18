@@ -174,4 +174,13 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
+
+  // Receptionist Vitals Station
+  getVitalsQueue: () => apiFetch('/receptionist/queue'),
+  claimVitals: (sessionId) => apiFetch(`/receptionist/sessions/${sessionId}/vitals/claim`, { method: 'POST' }),
+  releaseVitals: (sessionId) => apiFetch(`/receptionist/sessions/${sessionId}/vitals/release`, { method: 'POST' }),
+  saveVitals: (sessionId, data) => apiFetch(`/receptionist/sessions/${sessionId}/vitals`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
 };

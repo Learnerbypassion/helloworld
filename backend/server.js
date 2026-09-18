@@ -26,6 +26,7 @@ const bhasiniRoutes = require("./routes/bhasini");
 const decisionTreeRoutes = require("./routes/decisionTree");
 const hospitalSettingsRoutes = require("./routes/hospitalSettings");
 const mobileUploadRoutes = require("./routes/mobileUpload");
+const receptionistRoutes = require("./routes/receptionist");
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -45,6 +46,8 @@ app.use("/api/hospitals", decisionTreeRoutes);
 app.use("/api/hospitals", hospitalSettingsRoutes);
 // QR-code phone handoff routes (kiosk-side token + phone-side upload)
 app.use("/api", mobileUploadRoutes);
+// Receptionist vitals station — shared hospital-wide queue
+app.use("/api/receptionist", receptionistRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "MediKiosk API (Node.js)" });

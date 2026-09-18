@@ -171,6 +171,9 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
         age: p.age,
         gender: p.gender,
         abha_id: p.abha_id,
+        // Pre-consultation vitals recorded at the vitals station
+        vitals: s.vitals || null,
+        vitals_status: s.vitals_status || "pending",
         intake: {
           mode: s.ayush_mode ? "AYUSH" : "Allopathic",
           chiefComplaint: s.chief_complaint ? [s.chief_complaint] : [],
@@ -183,6 +186,7 @@ router.get("/queue", requireAuth, requireRole("doctor", "hospital_admin"), async
         }
       };
     });
+
 
     res.json(results);
   } catch (err) {

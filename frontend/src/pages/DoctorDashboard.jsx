@@ -681,6 +681,17 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                       <div>
                         <p className={`font-bold text-sm ${isActive ? 'text-brand-900' : 'text-gray-900'}`}>{patient?.name}</p>
                         <p className="text-xs text-gray-500 mt-0.5">Token: {q.token || `A-${q.id}`}</p>
+                        {/* Compact vitals summary line */}
+                        {q.vitals_status === 'recorded' && q.vitals && (() => {
+                          const v = q.vitals;
+                          const parts = [];
+                          if (v.bp_systolic != null && v.bp_diastolic != null) parts.push(`🩺 BP ${v.bp_systolic}/${v.bp_diastolic}`);
+                          if (v.temperature != null) parts.push(`🌡️ ${v.temperature}°F`);
+                          if (v.pulse != null) parts.push(`❤️ ${v.pulse} bpm`);
+                          if (v.spo2 != null) parts.push(`🫁 SpO₂ ${v.spo2}%`);
+                          if (parts.length === 0) return null;
+                          return <p className="text-[10px] text-teal-700 mt-1 font-medium">{parts.join(' · ')}</p>;
+                        })()}
                       </div>
                       {hasRedFlags && <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />}
                     </div>
@@ -759,6 +770,36 @@ Status: Digitally Signed & Synced to Central ABDM Registry
                         </div>
                       </div>
                     )}
+
+                    {/* Pre-consultation Vitals Card */}
+                    {activeConsultation.vitals_status === 'recorded' && activeConsultation.vitals && (() => {
+                      const v = activeConsultation.vitals;
+                      const rows = [
+                        v.bp_systolic != null && v.bp_diastolic != null && { label: '🩺 Blood Pressure', value: `${v.bp_systolic} / ${v.bp_diastolic} mmHg` },
+                        v.temperature != null && { label: '🌡️ Temperature', value: `${v.temperature} °F` },
+                        v.pulse != null && { label: '❤️ Pulse', value: `${v.pulse} bpm` },
+                        v.spo2 != null && { label: '🫁 SpO₂', value: `${v.spo2}%` },
+                        v.weight != null && { label: '⚖️ Weight', value: `${v.weight} kg` },
+                      ].filter(Boolean);
+                      if (rows.length === 0) return null;
+                      return (
+                        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 shadow-sm">
+                          <h3 className="font-bold text-teal-900 text-sm mb-3 flex items-center">
+                            <Activity className="w-4 h-4 mr-2 text-teal-600" />
+                            Pre-consultation Vitals
+                            <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 bg-teal-100 text-teal-700 border border-teal-200 rounded-full uppercase tracking-wide">Recorded</span>
+                          </h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {rows.map(({ label, value }) => (
+                              <div key={label} className="bg-white rounded-lg px-3 py-2 border border-teal-100 shadow-2xs">
+                                <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide block">{label}</span>
+                                <span className="text-sm font-bold text-gray-900">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* AI Clinical Summary Card */}
                     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
