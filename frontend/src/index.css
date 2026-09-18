@@ -13,10 +13,18 @@
   --color-accent-500: #10b981;
   --color-accent-600: #059669;
   --color-accent-700: #047857;
+  /* ── Clinical Portal palette (Doctor Dashboard only) ────────────────────── */
+  /* Distinct from kiosk brand-/accent- tokens — kiosk styles unaffected     */
+  --color-clinical-navy:    #1b3676; /* nav, patient banner, key titles       */
+  --color-clinical-primary: #0284c7; /* buttons, active state, focus rings    */
+  --color-clinical-ai:      #7c3aed; /* AI summary card & badge ONLY          */
+  --color-clinical-canvas:  #f8faff; /* page background tint                  */
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 body {
   @apply bg-slate-50 text-slate-900;
   font-family: var(--font-sans);
 }
+
